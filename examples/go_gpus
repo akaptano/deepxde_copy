@@ -1,0 +1,13 @@
+#!/bin/bash
+## Job Name
+#SBATCH --job-name=PINNs_MHD
+#SBATCH -p stf-gpu
+#SBATCH -A stf 
+#SBATCH --nodes=1
+#SBATCH --mem=120G
+#SBATCH --time=01:00:00
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:P100:1
+
+source activate tensorflowenv
+python3.8 mhd_equil.py

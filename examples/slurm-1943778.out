@@ -1,0 +1,61 @@
+WARNING:tensorflow:From /usr/lusers/akaptano/.conda/envs/tensorflowenv/lib/python3.8/site-packages/tensorflow/python/compat/v2_compat.py:96: disable_resource_variables (from tensorflow.python.ops.variable_scope) is deprecated and will be removed in a future version.
+Instructions for updating:
+non-resource variables are not supported in the long term
+Using TensorFlow 2 backend.
+
+Warning: 10000 points required, but 10100 points sampled.
+Compiling model...
+Building feed-forward neural network...
+'build' took 0.125185 s
+
+2021-05-28 16:36:21.307429: I tensorflow/core/platform/cpu_feature_guard.cc:142] This TensorFlow binary is optimized with oneAPI Deep Neural Network Library (oneDNN) to use the following CPU instructions in performance-critical operations:  SSE4.1 SSE4.2 AVX AVX2 FMA
+To enable them in other operations, rebuild TensorFlow with the appropriate compiler flags.
+(?, 2) (?, 1)
+'compile' took 0.813045 s
+
+2021-05-28 16:36:22.018782: I tensorflow/core/platform/profile_utils/cpu_utils.cc:114] CPU Frequency: 2399945000 Hz
+Initializing variables...
+Training model...
+
+Step      Train loss              Test loss               Test metric
+0         [1.01e+02, 1.23e-01]    [7.98e+01, 0.00e+00]    []  
+1000      [2.43e-04, 6.23e-04]    [2.05e-04, 0.00e+00]    []  
+2000      [3.65e-03, 7.11e-04]    [2.65e-03, 0.00e+00]    []  
+3000      [1.19e-04, 6.18e-04]    [1.09e-04, 0.00e+00]    []  
+4000      [1.20e-04, 6.11e-04]    [1.11e-04, 0.00e+00]    []  
+5000      [1.01e-04, 6.10e-04]    [9.08e-05, 0.00e+00]    []  
+6000      [9.64e-05, 6.09e-04]    [8.66e-05, 0.00e+00]    []  
+7000      [7.24e-05, 6.07e-04]    [6.17e-05, 0.00e+00]    []  
+8000      [7.12e-03, 4.55e-04]    [6.12e-03, 0.00e+00]    []  
+9000      [4.49e-05, 6.08e-04]    [3.57e-05, 0.00e+00]    []  
+10000     [2.13e-04, 6.30e-04]    [1.42e-04, 0.00e+00]    []  
+
+Best model at step 9000:
+  train loss: 6.53e-04
+  test loss: 3.57e-05
+  test metric: []
+
+'train' took 1513.272350 s
+
+/usr/lusers/akaptano/.conda/envs/tensorflowenv/lib/python3.8/site-packages/tensorflow/python/keras/legacy_tf_layers/core.py:171: UserWarning: `tf.layers.dense` is deprecated and will be removed in a future version. Please use `tf.keras.layers.Dense` instead.
+  warnings.warn('`tf.layers.dense` is deprecated and '
+/usr/lusers/akaptano/.conda/envs/tensorflowenv/lib/python3.8/site-packages/tensorflow/python/keras/engine/base_layer_v1.py:1692: UserWarning: `layer.apply` is deprecated and will be removed in a future version. Please use `layer.__call__` method instead.
+  warnings.warn('`layer.apply` is deprecated and '
+(100, 100)
+(10000, 2) (100, 100)
+Traceback (most recent call last):
+  File "mhd_equil.py", line 129, in <module>
+    main()
+  File "mhd_equil.py", line 95, in main
+    plt.figure()
+  File "/usr/lusers/akaptano/.conda/envs/tensorflowenv/lib/python3.8/site-packages/matplotlib/pyplot.py", line 687, in figure
+    figManager = new_figure_manager(num, figsize=figsize,
+  File "/usr/lusers/akaptano/.conda/envs/tensorflowenv/lib/python3.8/site-packages/matplotlib/pyplot.py", line 315, in new_figure_manager
+    return _backend_mod.new_figure_manager(*args, **kwargs)
+  File "/usr/lusers/akaptano/.conda/envs/tensorflowenv/lib/python3.8/site-packages/matplotlib/backend_bases.py", line 3494, in new_figure_manager
+    return cls.new_figure_manager_given_figure(num, fig)
+  File "/usr/lusers/akaptano/.conda/envs/tensorflowenv/lib/python3.8/site-packages/matplotlib/backends/_backend_tk.py", line 885, in new_figure_manager_given_figure
+    window = tk.Tk(className="matplotlib")
+  File "/usr/lusers/akaptano/.conda/envs/tensorflowenv/lib/python3.8/tkinter/__init__.py", line 2270, in __init__
+    self.tk = _tkinter.create(screenName, baseName, className, interactive, wantobjects, useTk, sync, use)
+_tkinter.TclError: couldn't connect to display "10.64.0.6:20.0"

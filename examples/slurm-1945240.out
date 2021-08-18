@@ -1,0 +1,60 @@
+WARNING:tensorflow:From /usr/lusers/akaptano/.conda/envs/tensorflowenv/lib/python3.8/site-packages/tensorflow/python/compat/v2_compat.py:96: disable_resource_variables (from tensorflow.python.ops.variable_scope) is deprecated and will be removed in a future version.
+Instructions for updating:
+non-resource variables are not supported in the long term
+Using TensorFlow 2 backend.
+
+Warning: 10000 points required, but 10100 points sampled.
+Compiling model...
+Building feed-forward neural network...
+'build' took 0.111835 s
+
+2021-05-30 12:47:52.606273: I tensorflow/core/platform/cpu_feature_guard.cc:142] This TensorFlow binary is optimized with oneAPI Deep Neural Network Library (oneDNN) to use the following CPU instructions in performance-critical operations:  SSE4.1 SSE4.2 AVX AVX2 FMA
+To enable them in other operations, rebuild TensorFlow with the appropriate compiler flags.
+'compile' took 1.513899 s
+
+2021-05-30 12:47:54.055793: I tensorflow/core/platform/profile_utils/cpu_utils.cc:114] CPU Frequency: 2400045000 Hz
+Initializing variables...
+Training model...
+
+Step      Train loss              Test loss               Test metric   
+0         [5.44e-02, 5.69e-13]    [2.31e-02, 0.00e+00]    [1.01e+00]    
+1000      [6.62e-05, 6.95e-16]    [2.83e-05, 0.00e+00]    [9.97e-01]    
+2000      [6.08e-02, 6.41e-13]    [2.58e-02, 0.00e+00]    [1.00e+00]    
+3000      [1.62e-06, 1.70e-17]    [6.93e-07, 0.00e+00]    [9.99e-01]    
+4000      [1.09e-07, 1.07e-18]    [4.98e-08, 0.00e+00]    [1.00e+00]    
+5000      [1.84e-07, 1.87e-18]    [8.22e-08, 0.00e+00]    [1.00e+00]    
+
+Best model at step 4000:
+  train loss: 1.09e-07
+  test loss: 4.98e-08
+  test metric: [1.00e+00]
+
+'train' took 639.025926 s
+
+Compiling model...
+'compile' took 0.747860 s
+
+Training model...
+
+Step      Train loss              Test loss               Test metric   
+5000      [1.84e-07, 1.87e-18]    [8.22e-08, 0.00e+00]    [1.00e+00]    
+5039      [2.01e-08, 1.35e-19]    [1.28e-08, 0.00e+00]    [1.00e+00]    
+
+Best model at step 5039:
+  train loss: 2.01e-08
+  test loss: 1.28e-08
+  test metric: [1.00e+00]
+
+'train' took 6.099119 s
+
+/usr/lusers/akaptano/.conda/envs/tensorflowenv/lib/python3.8/site-packages/tensorflow/python/keras/legacy_tf_layers/core.py:171: UserWarning: `tf.layers.dense` is deprecated and will be removed in a future version. Please use `tf.keras.layers.Dense` instead.
+  warnings.warn('`tf.layers.dense` is deprecated and '
+/usr/lusers/akaptano/.conda/envs/tensorflowenv/lib/python3.8/site-packages/tensorflow/python/keras/engine/base_layer_v1.py:1692: UserWarning: `layer.apply` is deprecated and will be removed in a future version. Please use `layer.__call__` method instead.
+  warnings.warn('`layer.apply` is deprecated and '
+Saving loss history to /gscratch/psicenter/akaptano/Psi-Tet-v2/deepxde/examples/loss.dat ...
+Saving training data to /gscratch/psicenter/akaptano/Psi-Tet-v2/deepxde/examples/train.dat ...
+Saving test data to /gscratch/psicenter/akaptano/Psi-Tet-v2/deepxde/examples/test.dat ...
+(100, 100)
+(10000, 2) (100, 100)
+Accuracy
+Mean residual: 7.722581e-05
