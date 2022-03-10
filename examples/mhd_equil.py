@@ -1,18 +1,39 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 import sys
 import numpy as np
+import h5py
+import matplotlib
+matplotlib.use('pdf')
 from matplotlib import pyplot as plt
 import deepxde as dde
 from scipy.special import jn_zeros, jv
-A = 1
-mu0 = 1
+import os
+from scipy.interpolate import griddata
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 psi0 = 0.1
-p0 = 0.1
+p0 = 5
 k = np.pi
+with h5py.File("Spheromak-flat_lam-flat_press/psi_gs-500.rst", 'r') as fid:
+    r_plot = np.asarray(fid['mesh/r_plot'])
+    psi_h5py = np.asarray(fid['gs/psi'])
+r_plot[:, 1] = r_plot[:, 1] + 0.5
 
 
+# Plot losses for training and testing
+def plot_loss():
+    loss = np.loadtxt('loss.dat')
+    test = np.loadtxt('test.dat')
+    train = np.loadtxt('train.dat')
+    steps = loss[:, 0]
+    plt.figure()
+    plt.semilogy(steps, loss[:, 1], label='train')
+    plt.semilogy(steps, loss[:, 4], label='test')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('loss.png')
+
+
+# Zero-beta GS equation
 def pde_0beta(x, u):
     lamda = np.sqrt(jn_zeros(1, 1) ** 2 + np.pi ** 2) 
     gamma = np.sqrt(lamda ** 2 - k ** 2)
@@ -23,49 +44,43 @@ def pde_0beta(x, u):
     GS = (
          psi_rr - psi_r / x[:, 0:1] + psi_zz + lamda ** 2 * psi
     )
-
     return [GS]
 
 
+# Linear-pressure GS equation
 def pde_linear(x, u):
-    lamda = np.sqrt(np.pi ** 2 - 2 ** 2) 
-    gamma = np.sqrt(- lamda ** 2 + k ** 2)
+    lamda = 4.675191889330353
     psi = u[:, 0:1]
     psi_r = dde.grad.jacobian(u, x, i=0, j=0)
     psi_rr = dde.grad.hessian(u, x, i=0, j=0)
     psi_zz = dde.grad.hessian(u, x, i=1, j=1)
     GS = (
-        psi_rr - psi_r / x[:, 0:1] + psi_zz + x[:, 0:1] ** 2 + lamda ** 2 * psi
+        psi_rr - psi_r / x[:, 0:1] + psi_zz + p0 * x[:, 0:1] ** 2 + lamda ** 2 * psi
     )
     return [GS]
 
 
-def psi_func(x):
-    return 0.0
-    
-
+# Zero-beta analytic solution
 def psi_0beta_analytic(x):
     lamda = np.sqrt(jn_zeros(1, 1) ** 2 + np.pi ** 2) 
     gamma = np.sqrt(lamda ** 2 - k ** 2)
     r0 = jn_zeros(0, 1) / gamma
-    return psi0 * x[:, 0:1] * jv(1, gamma * x[:, 0:1]) * np.sin(k * x[:, 1:2]) / jv(1, gamma * r0) / r0
+    psi = psi0 * x[:, 0:1] * jv(1, gamma * x[:, 0:1]) * np.sin(k * x[:, 1:2]) / jv(1, gamma * r0) / r0
+    return psi
     
 
+# Linear-pressure analytic solution (from PSI-Tri)
 def psi_linear_analytic(x):
-    lamda = np.sqrt(np.pi ** 2 - 2 ** 2) 
-    gamma = np.sqrt(- lamda ** 2 + k ** 2)
-    r0 = 1.652545 / gamma
-    beta_fac = (1 + jv(0, gamma * r0) / jv(2, gamma * r0)) / (jv(1, gamma * r0) * r0)
-    beta_term = x[:, 0:1] ** 2 * jv(0, gamma * r0) / (jv(2, gamma * r0) * r0 ** 2)
-    return psi0 * (beta_fac * x[:, 0:1] * jv(1, gamma * x[:, 0:1]) * np.sin(k * x[:, 1:2]) - beta_term)
+    psi = griddata(r_plot, psi_h5py, x, method='cubic')
+    psi = np.reshape(psi, (np.shape(psi)[0], 1))
+    return psi
 
 
+# Main program
 def main(argv):
     linear = False
-    print(str(sys.argv))
-    if np.any(np.asarray(str(sys.argv)) == 'linear'):
+    if len(argv) > 1: 
         linear = True
-
     spatial_domain = dde.geometry.Rectangle(xmin=[1e-4, 0.0], xmax=[1, 1])
 
     boundary_condition_psi = dde.DirichletBC(
@@ -78,37 +93,49 @@ def main(argv):
         observe_y = dde.PointSetBC(observe_x, psi_linear_analytic(observe_x))
         pde = pde_linear
         soln = psi_linear_analytic
+        data = dde.data.PDE(
+            spatial_domain,
+            pde,
+            [boundary_condition_psi, observe_y], 
+            solution=soln,
+            anchors=observe_x,
+            num_domain=5000,
+            num_boundary=500,
+            num_test=1000,
+        )
     else:
         observe_y = dde.PointSetBC(observe_x, psi_0beta_analytic(observe_x))
         pde = pde_0beta
         soln = psi_0beta_analytic 
-
-    data = dde.data.PDE(
-        spatial_domain,
-        pde,
-        [boundary_condition_psi, observe_y],
-        solution=soln,
-        anchors=observe_x,
-        num_domain=500,
-        num_boundary=50,
-        num_test=100,
-    )
+        data = dde.data.PDE(
+            spatial_domain,
+            pde,
+            [boundary_condition_psi, observe_y], 
+            solution=soln,
+            anchors=observe_x,
+            num_domain=5000,
+            num_boundary=500,
+            num_test=1000,
+        )
 
     net = dde.maps.FNN([2] + 4 * [40] + [1], "tanh", "Glorot normal")
     net.apply_output_transform(lambda x, y: (x[:, 0:1] * (1 - x[:, 0:1])) * (x[:, 1:2] * (1 - x[:, 1:2])) * y)
 
     model = dde.Model(data, net)
 
+    # decay_steps = 1000
+    # decay_rate = 0.95
     model.compile(
         "adam", lr=1e-3, metrics=["l2 relative error"]
     )
-    model.train(epochs=500)
+    model.train(epochs=3000)
     model.compile("L-BFGS-B", metrics=["l2 relative error"])
-    losshistory, train_state = model.train(epochs=500)
-    #dde.saveplot(losshistory, train_state, issave=True, isplot=True)
+    losshistory, train_state = model.train(epochs=5000)
+    dde.saveplot(losshistory, train_state, issave=True, isplot=False)
+    plot_loss() 
     # make mesh
-    nr = 50
-    nz = 50
+    nr = 100
+    nz = 100
     r, z = np.meshgrid(
         np.linspace(1e-4, 1, nr),
         np.linspace(0.0, 1, nz),
@@ -121,10 +148,11 @@ def main(argv):
     # psi is only predicted up to overall constant 
     # so normalize to psi0 
     psi_pred = output[:, 0].reshape(-1)
-    psi_pred = psi_pred / np.max(np.abs(psi_pred)) * psi0
+    if linear:
+        psi_pred = psi_pred / np.max(np.abs(psi_pred)) * psi0 * 10
+    else:
+        psi_pred = psi_pred / np.max(np.abs(psi_pred)) * psi0
     psi_pred = np.reshape(psi_pred, [nr, nz])
-    print(psi_pred.shape)
-    print(X.shape, r.shape)
     plt.figure(figsize=(10, 14))
     plt.subplot(3, 1, 1)
     plt.contourf(r, z, psi_pred)
@@ -134,7 +162,6 @@ def main(argv):
     ax.tick_params(axis='x', labelsize=20)
     ax.tick_params(axis='y', labelsize=20)
     ax.set_xticklabels([])
-
     if linear:
         psi_true = psi_linear_analytic(X)
     else:    
@@ -157,11 +184,8 @@ def main(argv):
     ax = plt.gca()
     ax.tick_params(axis='x', labelsize=20)
     ax.tick_params(axis='y', labelsize=20)
-    plt.savefig('psi_PINN.jpg')
-    # psi_exact = psi_func(X).reshape(-1)
-
+    plt.savefig('psi_PINN.png')
     GS = model.predict(X, operator=pde)
-
     residual_psi = np.mean(np.absolute(GS))
 
     print("Accuracy")
