@@ -13,7 +13,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 psi0 = 0.1
 p0 = 5
 k = np.pi
-with h5py.File("Spheromak-flat_lam-flat_press/psi_gs-500.rst", 'r') as fid:
+with h5py.File("/global/homes/a/akaptano/deepxde_copy/examples/Spheromak-flat_lam-flat_press/psi_gs-500.rst", 'r') as fid:
     r_plot = np.asarray(fid['mesh/r_plot'])
     psi_h5py = np.asarray(fid['gs/psi'])
 r_plot[:, 1] = r_plot[:, 1] + 0.5
