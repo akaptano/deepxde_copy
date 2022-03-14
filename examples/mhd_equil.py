@@ -2,7 +2,7 @@ import sys
 import numpy as np
 import h5py
 import matplotlib
-matplotlib.use('pdf')
+#matplotlib.use('pdf')
 from matplotlib import pyplot as plt
 import deepxde as dde
 from scipy.special import jn_zeros, jv
@@ -13,7 +13,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 psi0 = 0.1
 p0 = 5
 k = np.pi
-with h5py.File("/global/homes/a/akaptano/deepxde_copy/examples/Spheromak-flat_lam-flat_press/psi_gs-500.rst", 'r') as fid:
+with h5py.File("Spheromak-flat_lam-flat_press/psi_gs-500.rst", 'r') as fid:
     r_plot = np.asarray(fid['mesh/r_plot'])
     psi_h5py = np.asarray(fid['gs/psi'])
 r_plot[:, 1] = r_plot[:, 1] + 0.5
@@ -30,7 +30,7 @@ def plot_loss():
     plt.semilogy(steps, loss[:, 4], label='test')
     plt.legend()
     plt.grid(True)
-    plt.savefig('loss.png')
+    # plt.savefig('loss.png')
 
 
 # Zero-beta GS equation
@@ -126,9 +126,9 @@ def main(argv):
     # decay_steps = 1000
     # decay_rate = 0.95
     model.compile(
-        "adam", lr=1e-3, metrics=["l2 relative error"]
+        "adam", lr=1e-4, metrics=["l2 relative error"]
     )
-    model.train(epochs=3000)
+    model.train(epochs=50000)
     model.compile("L-BFGS-B", metrics=["l2 relative error"])
     losshistory, train_state = model.train(epochs=5000)
     dde.saveplot(losshistory, train_state, issave=True, isplot=False)
@@ -146,17 +146,17 @@ def main(argv):
     output = model.predict(X)
 
     # psi is only predicted up to overall constant 
-    # so normalize to psi0 
+    # if the pressure is zero, so normalize to psi0 in this case
     psi_pred = output[:, 0].reshape(-1)
     if linear:
-        psi_pred = psi_pred / np.max(np.abs(psi_pred)) * psi0 * 10
+        psi_pred = psi_pred / np.max(np.abs(psi_pred))
     else:
         psi_pred = psi_pred / np.max(np.abs(psi_pred)) * psi0
     psi_pred = np.reshape(psi_pred, [nr, nz])
     plt.figure(figsize=(10, 14))
     plt.subplot(3, 1, 1)
     plt.contourf(r, z, psi_pred)
-    plt.colorbar()  # ticks=np.linspace(0, 0.105, 10))
+    plt.colorbar(ticks=np.linspace(0, 1.05, 10))
     plt.ylabel('Z', fontsize=24)
     ax = plt.gca()
     ax.tick_params(axis='x', labelsize=20)
@@ -169,7 +169,7 @@ def main(argv):
     psi_true = np.reshape(psi_true, [nr, nz])
     plt.subplot(3, 1, 2)
     plt.contourf(r, z, psi_true)
-    plt.colorbar()  # ticks=np.linspace(0, 0.105, 10))
+    plt.colorbar(ticks=np.linspace(0, 1.05, 10))
     plt.ylabel('Z', fontsize=24)
     ax = plt.gca()
     ax.tick_params(axis='x', labelsize=20)
@@ -184,13 +184,14 @@ def main(argv):
     ax = plt.gca()
     ax.tick_params(axis='x', labelsize=20)
     ax.tick_params(axis='y', labelsize=20)
-    plt.savefig('psi_PINN.png')
+    # plt.savefig('psi_PINN.png')
     GS = model.predict(X, operator=pde)
     residual_psi = np.mean(np.absolute(GS))
 
     print("Accuracy")
     print("Mean residual:", residual_psi)
     # print("L2 relative error in u:", l2_difference_psi)
+    plt.show()
 
 if __name__ == "__main__":
     main(sys.argv)

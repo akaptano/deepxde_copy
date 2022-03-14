@@ -3,7 +3,7 @@ import h5py
 import matplotlib.pyplot as plt
 
 # Load data from file
-with h5py.File("psi_gs-00.rst", 'r') as fid:
+with h5py.File("Spheromak-flat_lam-flat_press/psi_gs-500.rst", 'r') as fid:
     # Grid and poloidal flux
     lc_plot = np.asarray(fid['mesh/lc_plot'])
     r_plot = np.asarray(fid['mesh/r_plot'])
