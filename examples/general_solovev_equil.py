@@ -77,6 +77,7 @@ def main():
         num_domain=500,
         num_boundary=50,
         num_test=100,
+        train_distribution="LHS"
     )
 
     net = dde.maps.FNN([2] + 4 * [40] + [1], "tanh", "Glorot normal")

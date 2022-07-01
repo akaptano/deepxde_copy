@@ -74,28 +74,21 @@ class Disk(Geometry):
 class Ellipse(Geometry):
     def __init__(self, eps, kappa, delta):
         self.N = 10000
-        self.center, self.eps, self.kappa, self.delta = 0.0, eps, kappa, delta
+        self.center, self.eps, self.kappa, self.delta = np.array([[0.0,0.0]]), eps, kappa, delta
         self.tau = np.linspace(0, 2 * np.pi, self.N)
         # Define boundary of ellipse
         self.x_ellipse = np.asarray([1 + eps * np.cos(self.tau + np.arcsin(delta) * np.sin(self.tau)), 
                           eps * kappa * np.sin(self.tau)]).T
-        super(Ellipse, self).__init__(2, (-kappa * eps, kappa * eps), 1)
+        # setting xmin and xmax for bbox
+        xmin = np.array([1-eps,-kappa * eps])
+        xmax = np.array([1+eps, kappa * eps])
+        super(Ellipse, self).__init__(2, (xmin,xmax), 1)
 
     def inside(self, x):
-        # get angular coordinate of the points with respect to (1 - delta * eps, 0) origin, this corresponds to tau
-        theta = np.arccos((x[:, 0:1] - 1 + self.delta * self.eps) / np.sqrt((x[:, 0:1] - 1 + self.delta * self.eps) ** 2 + x[:, 1:2] ** 2))
-        # find location along shape corresponding to this angle
-        x_loc = 1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta))
-        y_loc = self.eps * self.kappa * np.sin(theta) 
-        x_loc = [x_loc, y_loc]
-        if np.all(x[:, 0:1] <= x_loc): # and np.all(x[:, 1:2]) <= y_loc):
-            return True
-        else:
-            return False
+        return is_point_in_path(x[:, 0:1], x[:, 1:2], self.x_ellipse)
 
     def on_boundary(self, x):
         return np.any(np.abs(x - self.x_ellipse) <= 1e-5)
-
     #def boundary_normal(self, x):
     #    _n = x - self.center
     #    l = np.linalg.norm(_n, axis=-1, keepdims=True)
@@ -625,3 +618,30 @@ def is_on_line_segment(P0, P1, P2):
         or np.isclose(np.linalg.norm(v02), 0)  # check whether P2 is close to P0
         or np.isclose(np.linalg.norm(v12), 0)  # check whether P2 is close to P1
     )
+
+def is_point_in_path(x: int, y: int, poly) -> bool:
+    # Determine if the point is in the polygon.
+    #
+    # Args:
+    #   x -- The x coordinates of point.
+    #   y -- The y coordinates of point.
+    #   poly -- a list of tuples [(x, y), (x, y), ...]
+    #
+    # Returns:
+    #   True if the point is in the path or is a corner or on the boundary
+    num = len(poly)
+    j = num - 1
+    c = False
+    for i in range(num):
+        if (x == poly[i][0]) and (y == poly[i][1]):
+            # point is a corner
+            return True
+        if ((poly[i][1] > y) != (poly[j][1] > y)):
+            slope = (x-poly[i][0])*(poly[j][1]-poly[i][1])-(poly[j][0]-poly[i][0])*(y-poly[i][1])
+            if slope == 0:
+                # point is on boundary
+                return True
+            if (slope < 0) != (poly[j][1] < poly[i][1]):
+                c = not c
+        j = i
+    return c
