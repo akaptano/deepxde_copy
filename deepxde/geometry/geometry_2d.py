@@ -88,7 +88,18 @@ class Ellipse(Geometry):
         return is_point_in_path(x[:, 0:1], x[:, 1:2], self.x_ellipse)
 
     def on_boundary(self, x):
-        return np.any(np.abs(x - self.x_ellipse) <= 1e-5)
+        # This is not finding the distance of 2d points. Only for 1d does this work. 
+        return np.array([self.point_on_boundary(x[i]) for i in range(len(x))])
+    
+    def point_on_boundary(self, x):
+        # Input
+        #   x: A point i.e. array([1.0, 0.3])
+        # Output
+        #   True/False
+        return np.any(np.sqrt(np.abs(x - self.x_ellipse)[:,0:1]**2 + \
+                              np.abs(x - self.x_ellipse)[:,1:2]**2  
+                     ) <= 1e-5   
+) 
     #def boundary_normal(self, x):
     #    _n = x - self.center
     #    l = np.linalg.norm(_n, axis=-1, keepdims=True)
