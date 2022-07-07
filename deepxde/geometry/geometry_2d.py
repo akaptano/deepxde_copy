@@ -73,7 +73,7 @@ class Disk(Geometry):
 
 class Ellipse(Geometry):
     def __init__(self, eps, kappa, delta):
-        self.N = 10000
+        self.N = 10001
         self.center, self.eps, self.kappa, self.delta = np.array([[0.0,0.0]]), eps, kappa, delta
         self.tau = np.linspace(0, 2 * np.pi, self.N)
         # Define boundary of ellipse
@@ -96,9 +96,10 @@ class Ellipse(Geometry):
         #   x: A point i.e. array([1.0, 0.3])
         # Output
         #   True/False
+        tol = 1e-5  
         return np.any(np.sqrt(np.abs(x - self.x_ellipse)[:,0:1]**2 + \
                               np.abs(x - self.x_ellipse)[:,1:2]**2  
-                     ) <= 1e-5   
+                     ) <= tol  
 ) 
     #def boundary_normal(self, x):
     #    _n = x - self.center
