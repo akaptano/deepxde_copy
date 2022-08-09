@@ -1,0 +1,2 @@
+model_checkpoint_path: "ITER-01.ckpt-10000"
+all_model_checkpoint_paths: "ITER-01.ckpt-10000"
