@@ -73,11 +73,11 @@ class Disk(Geometry):
 
 class Ellipse(Geometry):
     def __init__(self, eps, kappa, delta):
-        self.N = 10001
+        self.N = 101
         self.center, self.eps, self.kappa, self.delta = np.array([[0.0,0.0]]), eps, kappa, delta
         self.tau = np.linspace(0, 2 * np.pi, self.N)
         # Define boundary of ellipse
-        self.x_ellipse = np.asarray([1 + eps * np.cos(self.tau + np.arcsin(delta) * np.sin(self.tau)), 
+        self.x_ellipse = np.asarray([1 + eps * np.cos(self.tau + np.arcsin(delta) * np.sin(self.tau)),
                           eps * kappa * np.sin(self.tau)]).T
         # setting xmin and xmax for bbox
         xmin = np.array([1-eps,-kappa * eps])
@@ -88,19 +88,18 @@ class Ellipse(Geometry):
         return is_point_in_path(x[:, 0:1], x[:, 1:2], self.x_ellipse)
 
     def on_boundary(self, x):
-        # This is not finding the distance of 2d points. Only for 1d does this work. 
+        # This is not finding the distance of 2d points. Only for 1d does this work.
         return np.array([self.point_on_boundary(x[i]) for i in range(len(x))])
-    
+
     def point_on_boundary(self, x):
         # Input
         #   x: A point i.e. array([1.0, 0.3])
         # Output
         #   True/False
-        tol = 1e-5  
-        return np.any(np.sqrt(np.abs(x - self.x_ellipse)[:,0:1]**2 + \
-                              np.abs(x - self.x_ellipse)[:,1:2]**2  
-                     ) <= tol  
-) 
+        tol = np.max(np.linalg.norm(x_ellipse[:-1] - x_ellipse[1:], axis=-1))
+        abs_diff = np.abs(x - self.x_ellipse)
+        return np.any(np.sqrt(abs_diff[:,0:1]**2 + abs_diff[:,1:2]**2) <= tol)
+
     #def boundary_normal(self, x):
     #    _n = x - self.center
     #    l = np.linalg.norm(_n, axis=-1, keepdims=True)
@@ -118,16 +117,16 @@ class Ellipse(Geometry):
 
     def uniform_boundary_points(self, n):
         theta = np.linspace(0, 2 * np.pi, n)
-        X = np.hstack((1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta)) , 
+        X = np.hstack((1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta)) ,
                        self.eps * self.kappa * np.sin(theta)))
-        return X 
+        return X
 
     def random_boundary_points(self, n, random="pseudo"):
         u = sample(n, 1, random)
         theta = 2 * np.pi * u
-        X = np.hstack((1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta)) , 
+        X = np.hstack((1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta)) ,
                        self.eps * self.kappa * np.sin(theta)))
-        return X 
+        return X
 
     #def background_points(self, x, dirn, dist2npt, shift):
     #    dirn = dirn / np.linalg.norm(dirn)

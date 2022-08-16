@@ -55,7 +55,8 @@ class PDE(Data):
         anchors=None,
         exclusions=None,
         solution=None,
-        num_test=None,
+        x_test=None,
+        y_test=None,
         auxiliary_var_function=None,
     ):
         self.geom = geometry
@@ -82,7 +83,6 @@ class PDE(Data):
         self.exclusions = exclusions
 
         self.soln = solution
-        self.num_test = num_test
 
         self.auxiliary_var_fn = auxiliary_var_function
 
@@ -90,7 +90,11 @@ class PDE(Data):
         self.train_x, self.train_y = None, None
         self.train_x_bc = None
         self.num_bcs = None
-        self.test_x, self.test_y = None, None
+        self.test_x, self.test_y = x_test, y_test
+        if (x_test is not None and y_test is None) or (x_test is None and y_test is not None):
+            raise ValueError("x_test and y_test must be defined concurrently.")
+        if x_test is not None:
+            self.num_test = len(self.test_x)
         self.train_aux_vars, self.test_aux_vars = None, None
 
         self.train_next_batch()
@@ -160,10 +164,8 @@ class PDE(Data):
 
     @run_if_all_none("test_x", "test_y", "test_aux_vars")
     def test(self):
-        if self.num_test is None:
+        if self.test_x is None:
             self.test_x = self.train_x_all
-        else:
-            self.test_x = self.test_points()
         self.test_y = self.soln(self.test_x) if self.soln else None
         if self.auxiliary_var_fn is not None:
             self.test_aux_vars = self.auxiliary_var_fn(self.test_x)
@@ -255,7 +257,8 @@ class TimePDE(PDE):
         anchors=None,
         exclusions=None,
         solution=None,
-        num_test=None,
+        x_test=None,
+        y_test=None,
         auxiliary_var_function=None,
     ):
         self.num_initial = num_initial
@@ -269,7 +272,8 @@ class TimePDE(PDE):
             anchors=anchors,
             exclusions=exclusions,
             solution=solution,
-            num_test=num_test,
+            x_test=None,
+            y_test=None,
             auxiliary_var_function=auxiliary_var_function,
         )
 
