@@ -48,11 +48,14 @@ def saveplot(
 
 def plot_loss_history(losshistory, fname="loss_history.png", save_plot=False):
     loss_train = np.sum(losshistory.loss_train, axis=1)
+    loss_train_domain = [item[0] for item in losshistory.loss_train]
+    loss_train_boundary = [item[1] for item in losshistory.loss_train]
     loss_test = np.sum(losshistory.loss_test, axis=1)
 
     plt.figure()
-    plt.semilogy(losshistory.steps, loss_train, label="Train loss")
-    plt.semilogy(losshistory.steps, loss_test, label="Test loss")
+    plt.semilogy(losshistory.steps, loss_train_domain, label="Domain Train loss")
+    plt.semilogy(losshistory.steps, loss_train_boundary, label="Boundary Train loss")
+    # plt.semilogy(losshistory.steps, loss_test, label="Test loss")
     for i in range(len(losshistory.metrics_test[0])):
         plt.semilogy(
             losshistory.steps,
