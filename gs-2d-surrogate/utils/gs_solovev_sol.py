@@ -3,8 +3,9 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 
 class GS_Linear: 
-    def __init__(self, A, eps, kappa, delta,beta_limit=False):
+    def __init__(self, A, eps, kappa, delta,divertor = False, beta_limit=False):
 
+        self.divertor = divertor
         self.beta_limit = beta_limit
         if self.beta_limit == False:
             self.A = A
@@ -97,14 +98,22 @@ class GS_Linear:
         dUH_dx,  dUP_dx  = self.get_point_slope_dx(x,y)
         self.BC4 = (dUH_dyy + self.N2*dUH_dx, \
                     dUP_dyy + self.N2*dUP_dx)
-        # high point
-        x,y = self.high_point()
-        self.BC5 = self.get_point_flux(x,y)
-        self.BC6  = self.get_point_slope_dx(x,y)
-        dUH_dxx, dUP_dxx = self.get_point_curvature_dxx(x,y)
-        dUH_dy,  dUP_dy  = self.get_point_slope_dy(x,y)
-        self.BC7 = (dUH_dxx + self.N3*dUH_dy, \
-                      dUP_dxx + self.N3*dUP_dy)
+        if self.divertor == False:
+            # high point
+            x,y = self.high_point()
+            self.BC5 = self.get_point_flux(x,y)
+            self.BC6  = self.get_point_slope_dx(x,y)
+            dUH_dxx, dUP_dxx = self.get_point_curvature_dxx(x,y)
+            dUH_dy,  dUP_dy  = self.get_point_slope_dy(x,y)
+            self.BC7 = (dUH_dxx + self.N3*dUH_dy, \
+                        dUP_dxx + self.N3*dUP_dy)
+
+        if self.divertor == True:
+            # separatrix point
+            x,y = self.sep_point()
+            self.BC5 = self.get_point_flux(x,y)
+            self.BC6  = self.get_point_slope_dx(x,y)
+            self.BC7 = self.get_point_slope_dy(x,y)
 
         if self.beta_limit == True:
             x,y = self.inner_point()
@@ -217,6 +226,10 @@ class GS_Linear:
 
     def high_point(self):
         return 1.0-self.delta*self.eps, self.kappa*self.eps
+
+    def sep_point(self):
+        shift = 0.1
+        return 1.0-(1.0+shift)*self.delta*self.eps, (1.0+shift)*self.kappa*self.eps
 
     def get_point_flux(self,x,y):
         U0 = self.get_U0(x,y)
