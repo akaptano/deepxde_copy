@@ -20,7 +20,10 @@ def evaluate_eq(ITER,model):
     output_eq = model.predict(X_eq)
     psi_pred_eq = output_eq[:, 0].reshape(-1)
     psi_pred_eq = np.reshape(psi_pred_eq, [nx, 1])
-    return x_eq.reshape(-1),psi_true_eq.reshape(-1), psi_pred_eq.reshape(-1)
+
+    e = (psi_true_eq-psi_pred_eq)**2/min(psi_pred_eq)**2
+
+    return x_eq.reshape(-1),psi_true_eq.reshape(-1), psi_pred_eq.reshape(-1), e
 
 
 def evaluate(ITER,model):
@@ -43,14 +46,29 @@ def evaluate(ITER,model):
     x_ellipse = np.asarray([1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)), 
                     eps * kappa * np.sin(tau)]).T[::-1]
 
+    # # make mesh
+    # nx = 500
+    # ny = 500
+    # zoom = 0.05
+    # x, y = np.meshgrid(
+    #     np.linspace(1 - eps*(1+zoom), 1 + eps*(1+zoom), nx),
+    #     np.linspace(-kappa * eps*(1+zoom), kappa * eps*(1+zoom), ny),
+    # )
+    # X = np.vstack((np.ravel(x), np.ravel(y))).T
+
     # make mesh
-    nx = 500
-    ny = 500
-    zoom = 0.05
+    nx = 501
+    ny = 501
+    zoom = 0.2
+    inner_point = (1 - 1.1*ITER.eps*(1+zoom))
+    outer_point = (1 + 1.1*ITER.eps*(1+zoom))
+    high_point  = (1.1*ITER.kappa * ITER.eps*(1+zoom) )
+    low_point   = (-1.1*ITER.kappa * ITER.eps*(1+zoom) )
     x, y = np.meshgrid(
-        np.linspace(1 - eps*(1+zoom), 1 + eps*(1+zoom), nx),
-        np.linspace(-kappa * eps*(1+zoom), kappa * eps*(1+zoom), ny),
+        np.linspace(inner_point, outer_point , nx),
+        np.linspace(low_point, high_point, ny),
     )
+
     X = np.vstack((np.ravel(x), np.ravel(y))).T
 
     X_bc = np.vstack((np.ravel(x_ellipse[:,0]), np.ravel(x_ellipse[:,1]))).T
