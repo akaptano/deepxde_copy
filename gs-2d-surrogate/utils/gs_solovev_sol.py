@@ -95,6 +95,8 @@ class GS_Linear:
         if self.beta_limit == True:
             self.UH = np.concatenate((self.UH,[self.BC0[0]]), axis=0) 
             self.UP = np.concatenate((self.UP,[-1*self.BC0[1]]), axis=0) 
+        print(np.shape(self.UH))
+        print(np.shape(self.UP))
         self.cj = np.linalg.solve(self.UH, self.UP).T
 
         if self.beta_limit == True:
@@ -138,16 +140,16 @@ class GS_Linear:
                         dUP_dxx + self.N3*dUP_dy)        
             # lower separatrix point
             x,y = self.sep_point()
-            self.BC8 = self.get_point_flux(x,y)
-            self.BC9  = self.get_point_slope_dx(x,y)
-            self.BC10 = self.get_point_slope_dy(x,y)
+            self.BC8 = self.get_point_flux(x,y*-1)
+            self.BC9  = self.get_point_slope_dx(x,y*-1)
+            self.BC10 = self.get_point_slope_dy(x,y*-1)
 
             # inner point up-down symmetry
             x,y = self.inner_point()
-            self.BC11 = self.get_point_slope_dx(x,y) 
+            self.BC11 = self.get_point_slope_dy(x,y) 
             # outer point up-down symmetry
             x,y = self.outer_point()
-            self.BC12 = self.get_point_slope_dx(x,y) 
+            self.BC12 = self.get_point_slope_dy(x,y) 
        
                 
         if self.divertor == 2:
@@ -296,7 +298,7 @@ class GS_Linear:
     def get_U11(self,x,y):
         return 3*y*x ** 4 - 4.0 * x ** 2 * y ** 3
     def get_U11_dx(self,x,y):
-        return 36 * y * x ** 2 - 8 * y ** 3
+        return 12 * y * x ** 3 - 8 * y ** 3*x
     def get_U11_dxx(self,x,y):
         return 36 * y * x ** 2 - 8 * y ** 3
     def get_U11_dy(self,x,y):
@@ -307,7 +309,7 @@ class GS_Linear:
     def get_U12(self,x,y):
         return 8.0*y ** 5 - 45*y*x ** 4 - 80 * y ** 3 * x ** 2 *np.log(x) + 60 * y * x ** 4 * np.log(x) 
     def get_U12_dx(self,x,y):
-        return -160*y ** 3 * x * np.log(x) - 80*y ** 3 * x + 240 * y * x ** 3 * np.log(x) * 120*y*x ** 3
+        return -160*y ** 3 * x * np.log(x) - 80*y ** 3 * x + 240 * y * x ** 3 * np.log(x) - 120*y*x ** 3
     def get_U12_dxx(self,x,y):
         return -160 * y ** 3 * np.log(x) - 240* y ** 3 + 720*y*x ** 2 * np.log(x) - 120*y*x ** 2 
     def get_U12_dy(self,x,y):
