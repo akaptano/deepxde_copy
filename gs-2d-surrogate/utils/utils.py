@@ -84,17 +84,11 @@ def evaluate(ITER,model):
     psi_true_lin = np.array(psi_true_lin)
     psi_true = np.copy(np.reshape(psi_true_lin, [nx, ny]))
     #filter
-    psi_true_lin[psi_true_lin>max(output_bc_true)] = 0.000
-    psi_true_filtered = np.reshape(psi_true_lin, [nx, ny])
-
-
 
     psi_pred_lin = model.predict(X)
     psi_pred_lin = psi_pred_lin.reshape(-1)
     psi_pred = np.copy(np.reshape(psi_pred_lin, [nx, ny]))
     #filter
-    psi_pred_lin[psi_pred_lin>max(output_bc_pred)] = max(output_bc_pred)
-    psi_pred_filtered = np.reshape(psi_pred_lin, [nx, ny])
 
 
     #filter
@@ -106,18 +100,33 @@ def evaluate(ITER,model):
 
     return x,y,psi_pred, psi_true, error
 
-def relative_error_plot(fig,ax,x,y,error,model,ITER):
+def relative_error_plot(fig,ax,x,y,error,model,ITER,DIVERTOR=False,v=[],X_test=[]):
+    
     N = 1001
     eps, kappa, delta = ITER.eps, ITER.kappa, ITER.delta
     tau = np.linspace(0, 2 * np.pi, N)
     # Define boundary of ellipse
     x_ellipse = np.asarray([1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)), 
                     eps * kappa * np.sin(tau)]).T[::-1]
+    if DIVERTOR == True:
+        x_ellipse = v
     X_bc = np.vstack((np.ravel(x_ellipse[:,0]), np.ravel(x_ellipse[:,1]))).T
     
     levels = 1000
     cmap= plt.cm.get_cmap("magma", levels+1)
-    cp = ax.contourf(x, y, error,levels, cmap=cmap)
+    # Calculate corresponding psi
+    if len(X_test) != 0:
+        psi_test = []
+        for point in X_test:
+            psi_test.append(ITER.psi_func(point[0],point[1]))
+        psi_true_test = np.reshape(psi_test, [len(psi_test), 1])
+        output_test = model.predict(X_test)
+        psi_pred_test = output_test[:, 0].reshape(-1)
+        psi_pred_test = np.reshape(psi_pred_test, [len(psi_pred_test), 1])
+        e = (psi_true_test-psi_pred_test)**2/min(psi_pred_test)**2
+        levels = np.linspace(0.0,max(e)[0],levels+1)
+
+    cp = ax.contourf(x, y, error,levels=levels, cmap=cmap)
 
     # Inside
     ax.scatter(model.data.train_x[:,0], model.data.train_x[:,1], s = 1.5, c="#0E0CB5")
@@ -132,7 +141,5 @@ def relative_error_plot(fig,ax,x,y,error,model,ITER):
     circ = patches.Polygon(xy=X_bc, transform=ax.transData)
     for coll in cp.collections:
         coll.set_clip_path(circ)
-
-    ax.axis(xmin=0.58,xmax=1.42,ymin=-0.6, ymax=0.6)
 
     return fig, ax

@@ -72,16 +72,28 @@ class Disk(Geometry):
 
 
 class Ellipse(Geometry):
-    def __init__(self, eps, kappa, delta):
+    def __init__(self, eps, kappa, delta,x_ellipse =[]):
+
+        self.DIVERTOR = False
         self.N = 101
         self.center, self.eps, self.kappa, self.delta = np.array([[0.0,0.0]]), eps, kappa, delta
         self.tau = np.linspace(0, 2 * np.pi, self.N)
         # Define boundary of ellipse
         self.x_ellipse = np.asarray([1 + eps * np.cos(self.tau + np.arcsin(delta) * np.sin(self.tau)),
                           eps * kappa * np.sin(self.tau)]).T
+
         # setting xmin and xmax for bbox
         xmin = np.array([1-eps,-kappa * eps])
         xmax = np.array([1+eps, kappa * eps])
+
+        # if Divertor
+        if len(x_ellipse) != 0:
+            # redefine x_ellipse
+            self.DIVERTOR = True
+            self.x_ellipse = x_ellipse
+            xmin = np.array([1-eps,-1.1*kappa * eps])
+            xmax = np.array([1+eps, 1.1*kappa * eps])
+
         super(Ellipse, self).__init__(2, (xmin,xmax), 1)
 
     def inside(self, x):
@@ -96,8 +108,19 @@ class Ellipse(Geometry):
         #   x: A point i.e. array([1.0, 0.3])
         # Output
         #   True/False
-        tol = np.max(np.linalg.norm(x_ellipse[:-1] - x_ellipse[1:], axis=-1))
+        tol = np.max(np.linalg.norm(self.x_ellipse[:-1] - self.x_ellipse[1:], axis=-1))
         abs_diff = np.abs(x - self.x_ellipse)
+
+        if self.DIVERTOR == True:
+            ##TODO: implement X-point boundary
+            self.sep = np.asarray([[1 + self.eps, 0], 
+                            [1 - self.eps, 0], 
+                            [1 - 1.1*self.delta * self.eps, 1.1*self.kappa * self.eps],
+                            [1 - 1.1* self.delta * self.eps, -1.1*self.kappa * self.eps]]
+                        )
+            on_sep = np.abs(x - self.sep)
+            return np.any(np.sqrt(abs_diff[:,0:1]**2 + abs_diff[:,1:2]**2) <= tol) | np.any(np.sqrt(on_sep[:,0:1]**2 + on_sep[:,1:2]**2) <= tol)
+
         return np.any(np.sqrt(abs_diff[:,0:1]**2 + abs_diff[:,1:2]**2) <= tol)
 
     #def boundary_normal(self, x):
