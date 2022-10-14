@@ -21,7 +21,9 @@ def evaluate_eq(ITER,model):
     psi_pred_eq = output_eq[:, 0].reshape(-1)
     psi_pred_eq = np.reshape(psi_pred_eq, [nx, 1])
 
-    e = (psi_true_eq-psi_pred_eq)**2/min(psi_pred_eq)**2
+    e = (psi_true_eq-psi_pred_eq)**2/min(psi_true_eq)**2
+    print('Average normalized percent error on midplane = ', np.mean(np.sqrt(e)) * 100)
+    print('Max normalized percent error on midplane = ', np.max(np.sqrt(e)) * 100)
 
     return x_eq.reshape(-1),psi_true_eq.reshape(-1), psi_pred_eq.reshape(-1), e
 
@@ -123,7 +125,9 @@ def relative_error_plot(fig,ax,x,y,error,model,ITER,DIVERTOR=False,v=[],X_test=[
         output_test = model.predict(X_test)
         psi_pred_test = output_test[:, 0].reshape(-1)
         psi_pred_test = np.reshape(psi_pred_test, [len(psi_pred_test), 1])
-        e = (psi_true_test-psi_pred_test)**2/min(psi_pred_test)**2
+        e = (psi_true_test-psi_pred_test)**2/min(psi_true_test)**2
+        print('Average normalized percent error = ', np.mean(np.sqrt(e)) * 100)
+        print('Max normalized percent error = ', np.max(np.sqrt(e)) * 100)
         levels = np.linspace(0.0,max(e)[0],levels+1)
 
     cp = ax.contourf(x, y, error,levels=levels, cmap=cmap)
