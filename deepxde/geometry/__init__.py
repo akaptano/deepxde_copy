@@ -6,6 +6,7 @@ from .csg import CSGUnion
 from .geometry_1d import Interval
 from .geometry_2d import Disk
 from .geometry_2d import Ellipse
+from .geometry_2d import Ellipse_A
 from .geometry_2d import Polygon
 from .geometry_2d import Rectangle
 from .geometry_2d import Triangle
@@ -24,6 +25,8 @@ __all__ = [
     "CSGUnion",
     "Interval",
     "Disk",
+    "Ellipse",
+    "Ellipse_A",
     "Polygon",
     "Rectangle",
     "Triangle",

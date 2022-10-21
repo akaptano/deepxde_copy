@@ -2,7 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-def evaluate_eq(ITER,model):
+
+def evaluate_eq(ITER, model):
     # make mesh
     nx = 100
     zoom = 0.00
@@ -31,7 +32,7 @@ def evaluate_eq(ITER,model):
 def evaluate(ITER,model):
     '''
     ##TODO: Need to break this file and refactor
-    evaluate() create a meshgrid and calculate 
+    evaluate() create a meshgrid and calculate
     psi_true,psi_pred, and relative error
     Input:
         ITER: GS_Linear function that contains shape parameter
@@ -45,7 +46,7 @@ def evaluate(ITER,model):
     eps, kappa, delta = ITER.eps, ITER.kappa, ITER.delta
     tau = np.linspace(0, 2 * np.pi, N)
     # Define boundary of ellipse
-    x_ellipse = np.asarray([1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)), 
+    x_ellipse = np.asarray([1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)),
                     eps * kappa * np.sin(tau)]).T[::-1]
 
     # # make mesh
@@ -64,10 +65,10 @@ def evaluate(ITER,model):
     zoom = 0.2
     inner_point = (1 - 1.1*ITER.eps*(1+zoom))
     outer_point = (1 + 1.1*ITER.eps*(1+zoom))
-    high_point  = (1.1*ITER.kappa * ITER.eps*(1+zoom) )
-    low_point   = (-1.1*ITER.kappa * ITER.eps*(1+zoom) )
+    high_point  = (1.1*ITER.kappa * ITER.eps*(1+zoom))
+    low_point   = (-1.1*ITER.kappa * ITER.eps*(1+zoom))
     x, y = np.meshgrid(
-        np.linspace(inner_point, outer_point , nx),
+        np.linspace(inner_point, outer_point, nx),
         np.linspace(low_point, high_point, ny),
     )
 
@@ -102,18 +103,94 @@ def evaluate(ITER,model):
 
     return x,y,psi_pred, psi_true, error
 
-def relative_error_plot(fig,ax,x,y,error,model,ITER,DIVERTOR=False,v=[],X_test=[]):
-    
+
+def evaluate_A(ITER,model):
+    '''
+    ##TODO: Need to break this file and refactor
+    evaluate() create a meshgrid and calculate
+    psi_true,psi_pred, and relative error
+    Input:
+        ITER: GS_Linear function that contains shape parameter
+        model: tf.model that contains the trained model
+    output:
+        psi_true: analytical solution
+        psi_pred: evaluated value from PINN model
+        error: relative error betwen psi_tre and psi_pred
+    '''
     N = 1001
     eps, kappa, delta = ITER.eps, ITER.kappa, ITER.delta
     tau = np.linspace(0, 2 * np.pi, N)
     # Define boundary of ellipse
-    x_ellipse = np.asarray([1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)), 
+    x_ellipse = np.asarray([1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)),
+                    eps * kappa * np.sin(tau), np.zeros(N)]).T[::-1]
+
+    # # make mesh
+    # nx = 500
+    # ny = 500
+    # zoom = 0.05
+    # x, y = np.meshgrid(
+    #     np.linspace(1 - eps*(1+zoom), 1 + eps*(1+zoom), nx),
+    #     np.linspace(-kappa * eps*(1+zoom), kappa * eps*(1+zoom), ny),
+    # )
+    # X = np.vstack((np.ravel(x), np.ravel(y))).T
+
+    # make mesh
+    nx = 51
+    ny = 51
+    zoom = 0.2
+    inner_point = (1 - 1.1*ITER.eps*(1+zoom))
+    outer_point = (1 + 1.1*ITER.eps*(1+zoom))
+    high_point  = (1.1*ITER.kappa * ITER.eps*(1+zoom) )
+    low_point   = (-1.1*ITER.kappa * ITER.eps*(1+zoom) )
+    x, y, A = np.meshgrid(
+        np.linspace(inner_point, outer_point , nx),
+        np.linspace(low_point, high_point, ny),
+        np.linspace(-1, 1, nx)
+    )
+
+    X = np.vstack((np.ravel(x), np.ravel(y), np.ravel(A))).T
+
+    X_bc = np.vstack((np.ravel(x_ellipse[:,0]), np.ravel(x_ellipse[:,1]), np.ravel(x_ellipse[:,2]))).T
+    output_bc_pred = model.predict(X_bc).reshape(-1)
+    output_bc_true = []
+    for point in X_bc:
+        ITER.get_BCs(point[2])
+        ITER.solve_coefficients()
+        output_bc_true.append(ITER.psi_func(point[0], point[1], point[2]))
+
+    # Calculate corresponding psi
+    psi_true_lin = []
+    for point in X:
+        ITER.get_BCs(point[2])
+        ITER.solve_coefficients()
+        psi_true_lin.append(ITER.psi_func(point[0], point[1], point[2]))
+    psi_true_lin = np.array(psi_true_lin)
+    psi_true = np.copy(np.reshape(psi_true_lin, [nx, ny, nx]))
+
+    psi_pred_lin = model.predict(X)
+    psi_pred_lin = psi_pred_lin.reshape(-1)
+    psi_pred = np.copy(np.reshape(psi_pred_lin, [nx, ny, nx]))
+
+    e_max = max((output_bc_pred-np.array(output_bc_true))**2/min(output_bc_pred)**2)
+    e = (psi_pred_lin-np.array(psi_true_lin))**2/min(psi_pred_lin)**2
+    error = np.reshape(e, [nx, ny, nx])
+    error[error>e_max] = e_max
+
+    return x, y, A, psi_pred, psi_true, error
+
+
+def relative_error_plot(fig,ax,x,y,error,model,ITER,DIVERTOR=False,v=[],X_test=[]):
+
+    N = 1001
+    eps, kappa, delta = ITER.eps, ITER.kappa, ITER.delta
+    tau = np.linspace(0, 2 * np.pi, N)
+    # Define boundary of ellipse
+    x_ellipse = np.asarray([1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)),
                     eps * kappa * np.sin(tau)]).T[::-1]
     if DIVERTOR == True:
         x_ellipse = v
     X_bc = np.vstack((np.ravel(x_ellipse[:,0]), np.ravel(x_ellipse[:,1]))).T
-    
+
     levels = 1000
     cmap= plt.cm.get_cmap("magma", levels+1)
     # Calculate corresponding psi
