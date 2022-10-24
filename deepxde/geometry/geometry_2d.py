@@ -147,14 +147,19 @@ class Ellipse(Geometry):
 
 
 class Ellipse_A(Geometry):
-    def __init__(self, eps, kappa, delta,x_ellipse =[], Amax=0.1):
+    def __init__(self, eps, kappa, delta, x_ellipse=[], Amax=0.1):
 
         self.N = 100
         self.num_A = 10
-        self.center, self.eps, self.kappa, self.delta = np.array([[0.0,0.0,0.0]]), eps, kappa, delta
+        self.center, self.eps, self.kappa, self.delta = np.array(
+            [[0.0, 0.0, 0.0]]), eps, kappa, delta
         self.tau = np.linspace(0, 2 * np.pi, self.N)
         Arange = np.linspace(-Amax, Amax, self.num_A)
-
+        #
+        # RA = np.outer(1 + self.eps * np.cos(theta + np.arcsin(self.delta)), Arange)
+        # ZA = np.outer(self.eps * self.kappa * np.sin(theta), Arange)
+        # RZA = np.transpose(np.stack((RA, ZA)), [1, 2, 0])
+        # RZA = RZA.reshape(self.N * self.num_A, 2)
         R_ellipse = np.outer(1 + self.eps * np.cos(self.tau + np.arcsin(self.delta) * np.sin(self.tau)),
                              np.ones(self.num_A)
                              )
@@ -164,7 +169,8 @@ class Ellipse_A(Geometry):
         A_ellipse = np.outer(np.ones(self.N), Arange)
 
         # Define boundary of elliptical disk
-        self.x_ellipse = np.asarray([R_ellipse, Z_ellipse, A_ellipse]).T
+        self.x_ellipse = np.transpose(np.asarray([R_ellipse, Z_ellipse, A_ellipse]), [1, 2, 0])
+        self.x_ellipse = self.x_ellipse.reshape(self.N * self.num_A, 3)
 
         # setting xmin and xmax for bbox
         xmin = np.array([1 - eps, -kappa * eps, -Amax])
@@ -209,7 +215,10 @@ class Ellipse_A(Geometry):
                              np.ones(n)
                              )
         A_ellipse = np.outer(np.ones(n), Arange)
-        X = np.hstack((R_ellipse, Z_ellipse, A_ellipse))
+        X = np.transpose(
+            np.asarray([R_ellipse, Z_ellipse, A_ellipse]),
+            [1, 2, 0]).reshape(n ** 2, 3
+                               )
         return X
 
     def random_boundary_points(self, n, random="pseudo"):
@@ -223,7 +232,11 @@ class Ellipse_A(Geometry):
                              np.ones(n)
                              )
         A_ellipse = np.outer(np.ones(n), Arange)
-        X = np.hstack((R_ellipse, Z_ellipse, A_ellipse))
+        # X = np.hstack((R_ellipse, Z_ellipse, A_ellipse))
+        X = np.transpose(
+            np.asarray([R_ellipse, Z_ellipse, A_ellipse]),
+            [1, 2, 0]).reshape(n ** 2, 3
+                               )
         return X
 
 
@@ -760,22 +773,22 @@ def is_point_in_path_A(Amax, x: int, y: int, A: int, poly) -> bool:
     #
     # Returns:
     #   True if the point is in the path or is a corner or on the boundary
-    poly_reshaped = poly.reshape(poly.shape[0] * poly.shape[1], poly.shape[2])
-    num = len(poly_reshaped)
+    # poly_reshaped = poly.reshape(poly.shape[0] * poly.shape[1], poly.shape[2])
+    num = len(poly)
     j = num - 1
     c = False
     for i in range(num):
-        if abs(A) == Amax:
-            return True  # on the [-Amax, Amax] boundary surface
-        if (x == poly_reshaped[i][0]) and (y == poly_reshaped[i][1]) and (A == poly_reshaped[i][2]):
+        # if abs(A) == Amax:
+        #     return True  # on the [-Amax, Amax] boundary surface
+        if (x == poly[i][0]) and (y == poly[i][1]):  # and (A == poly[i][2]):
             # point is a corner
             return True
-        if ((poly_reshaped[i][1] > y) != (poly_reshaped[j][1] > y)):
-            slope = (x-poly_reshaped[i][0])*(poly_reshaped[j][1]-poly_reshaped[i][1])-(poly_reshaped[j][0]-poly_reshaped[i][0])*(y-poly_reshaped[i][1])
+        if ((poly[i][1] > y) != (poly[j][1] > y)):
+            slope = (x-poly[i][0])*(poly[j][1]-poly[i][1])-(poly[j][0]-poly[i][0])*(y-poly[i][1])
             if slope == 0:
                 # point is on boundary
                 return True
-            if (slope < 0) != (poly_reshaped[j][1] < poly_reshaped[i][1]):
+            if (slope < 0) != (poly[j][1] < poly[i][1]):
                 c = not c
         j = i
     return c
