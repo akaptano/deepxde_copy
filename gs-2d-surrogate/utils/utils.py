@@ -120,9 +120,10 @@ def evaluate_A(ITER,model):
     N = 1001
     eps, kappa, delta = ITER.eps, ITER.kappa, ITER.delta
     tau = np.linspace(0, 2 * np.pi, N)
+    Arange = np.linspace(-0.1, 0.1, N)
     # Define boundary of ellipse
     x_ellipse = np.asarray([1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)),
-                    eps * kappa * np.sin(tau), np.zeros(N)]).T[::-1]
+                    eps * kappa * np.sin(tau), Arange]).T[::-1]
 
     # # make mesh
     # nx = 500
@@ -145,7 +146,7 @@ def evaluate_A(ITER,model):
     x, y, A = np.meshgrid(
         np.linspace(inner_point, outer_point , nx),
         np.linspace(low_point, high_point, ny),
-        np.linspace(-1, 1, nx)
+        np.linspace(-0.1, 0.1, nx)
     )
 
     X = np.vstack((np.ravel(x), np.ravel(y), np.ravel(A))).T

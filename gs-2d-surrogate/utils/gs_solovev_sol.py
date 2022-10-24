@@ -43,7 +43,7 @@ class GS_Linear:
         return psi_true
 
 
-    def psi_func(self, x, y):
+    def psi_func(self, x, y, A=None):
         '''
         Input:
         cj: a list of coefficients for each polynomials
@@ -52,6 +52,9 @@ class GS_Linear:
         Output:
         psi: flux function at a given point for GS w/ Solovev
         '''
+        if A is not None:
+            self.A = A
+
         ## Added this line to calculate both sides
         if x < 0:
             x *= -1

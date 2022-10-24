@@ -147,33 +147,34 @@ class Ellipse(Geometry):
 
 
 class Ellipse_A(Geometry):
-    def __init__(self, eps, kappa, delta,x_ellipse =[]):
+    def __init__(self, eps, kappa, delta,x_ellipse =[], Amax=0.1):
 
-        self.DIVERTOR = False
-        self.N = 101
+        self.N = 100
+        self.num_A = 10
         self.center, self.eps, self.kappa, self.delta = np.array([[0.0,0.0,0.0]]), eps, kappa, delta
         self.tau = np.linspace(0, 2 * np.pi, self.N)
-        A = np.linspace(-1, 1, self.N)
-        # Define boundary of ellipse
-        self.x_ellipse = np.asarray([1 + eps * np.cos(self.tau + np.arcsin(delta) * np.sin(self.tau)),
-                          eps * kappa * np.sin(self.tau), A]).T
+        Arange = np.linspace(-Amax, Amax, self.num_A)
+
+        R_ellipse = np.outer(1 + self.eps * np.cos(self.tau + np.arcsin(self.delta) * np.sin(self.tau)),
+                             np.ones(self.num_A)
+                             )
+        Z_ellipse = np.outer(self.eps * self.kappa * np.sin(self.tau),
+                             np.ones(self.num_A)
+                             )
+        A_ellipse = np.outer(np.ones(self.N), Arange)
+
+        # Define boundary of elliptical disk
+        self.x_ellipse = np.asarray([R_ellipse, Z_ellipse, A_ellipse]).T
 
         # setting xmin and xmax for bbox
-        xmin = np.array([1-eps,-kappa * eps, -1.0])
-        xmax = np.array([1+eps, kappa * eps, 1.0])
-
-        # if Divertor
-        if len(x_ellipse) != 0:
-            # redefine x_ellipse
-            self.DIVERTOR = True
-            self.x_ellipse = x_ellipse
-            xmin = np.array([1-eps,-1.1*kappa * eps, -1.0])
-            xmax = np.array([1+eps, 1.1*kappa * eps, 1.0])
+        xmin = np.array([1 - eps, -kappa * eps, -Amax])
+        xmax = np.array([1 + eps, kappa * eps, Amax])
+        self.Amax = Amax
 
         super(Ellipse_A, self).__init__(3, (xmin,xmax), 1)
 
     def inside(self, x):
-        return is_point_in_path_A(x[:, 0:1], x[:, 1:2], x[:, 2:3], self.x_ellipse)
+        return is_point_in_path_A(self.Amax, x[:, 0:1], x[:, 1:2], x[:, 2:3], self.x_ellipse)
 
     def on_boundary(self, x):
         # This is not finding the distance of 2d points. Only for 1d does this work.
@@ -184,20 +185,10 @@ class Ellipse_A(Geometry):
         #   x: A point i.e. array([1.0, 0.3])
         # Output
         #   True/False
-        tol = np.max(np.linalg.norm(self.x_ellipse[:-1] - self.x_ellipse[1:], axis=-1))
-        abs_diff = np.abs(x - self.x_ellipse)
-
-        if self.DIVERTOR == True:
-            ##TODO: implement X-point boundary
-            self.sep = np.asarray([[1 + self.eps, 0, 0.0],
-                            [1 - self.eps, 0, 0.0],
-                            [1 - 1.1*self.delta * self.eps, 1.1*self.kappa * self.eps, 0.0],
-                            [1 - 1.1* self.delta * self.eps, -1.1*self.kappa * self.eps, 0.0]]
-                        )
-            on_sep = np.abs(x - self.sep)
-            return np.any(np.sqrt(abs_diff[:,0:1]**2 + abs_diff[:,1:2]**2) <= tol) | np.any(np.sqrt(on_sep[:,0:1]**2 + on_sep[:,1:2]**2) <= tol)
-
-        return np.any(np.sqrt(abs_diff[:,0:1]**2 + abs_diff[:,1:2]**2 + abs_diff[:,2:3]**2) <= tol)
+        tol = np.max(np.linalg.norm(self.x_ellipse[:-1, 0:2] - self.x_ellipse[1:, 0:2], axis=-1))
+        abs_diff = np.abs(x[:, 0:2] - self.x_ellipse[:, 0:2])
+        return np.any(np.sqrt(abs_diff[:, 0:1]**2 + abs_diff[:, 1:2]**2) <= tol)
+        # or np.allclose(abs(abs_diff[:, 2:3]), self.Amax)
 
     def random_points(self, n, random="pseudo"):
         x = []
@@ -210,16 +201,29 @@ class Ellipse_A(Geometry):
 
     def uniform_boundary_points(self, n):
         theta = np.linspace(0, 2 * np.pi, n)
-        X = np.hstack((1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta)) ,
-                       self.eps * self.kappa * np.sin(theta), np.zeros(n)))
+        Arange = np.linspace(-self.Amax, self.Amax, n)
+        R_ellipse = np.outer(1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta)),
+                             np.ones(n)
+                             )
+        Z_ellipse = np.outer(self.eps * self.kappa * np.sin(theta),
+                             np.ones(n)
+                             )
+        A_ellipse = np.outer(np.ones(n), Arange)
+        X = np.hstack((R_ellipse, Z_ellipse, A_ellipse))
         return X
 
     def random_boundary_points(self, n, random="pseudo"):
         u = sample(n, 1, random)
         theta = 2 * np.pi * u
-        A = (sample(n, 1, random) - 0.5) * 2
-        X = np.hstack((1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta)) ,
-                       self.eps * self.kappa * np.sin(theta), A))
+        Arange = (sample(n, 1, random) - 0.5) * 2 * self.Amax
+        R_ellipse = np.outer(1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta)),
+                             np.ones(n)
+                             )
+        Z_ellipse = np.outer(self.eps * self.kappa * np.sin(theta),
+                             np.ones(n)
+                             )
+        A_ellipse = np.outer(np.ones(n), Arange)
+        X = np.hstack((R_ellipse, Z_ellipse, A_ellipse))
         return X
 
 
@@ -716,6 +720,7 @@ def is_on_line_segment(P0, P1, P2):
         or np.isclose(np.linalg.norm(v12), 0)  # check whether P2 is close to P1
     )
 
+
 def is_point_in_path(x: int, y: int, poly) -> bool:
     # Determine if the point is in the polygon.
     #
@@ -744,29 +749,33 @@ def is_point_in_path(x: int, y: int, poly) -> bool:
     return c
 
 
-def is_point_in_path_A(x: int, y: int, A: int, poly) -> bool:
+def is_point_in_path_A(Amax, x: int, y: int, A: int, poly) -> bool:
     # Determine if the point is in the polygon.
     #
     # Args:
     #   x -- The x coordinates of point.
     #   y -- The y coordinates of point.
-    #   poly -- a list of tuples [(x, y), (x, y), ...]
+    #   A -- The parametrized coordinate
+    #   poly -- a list of tuples [(x, y, A), (x, y, A), ...]
     #
     # Returns:
     #   True if the point is in the path or is a corner or on the boundary
-    num = len(poly)
+    poly_reshaped = poly.reshape(poly.shape[0] * poly.shape[1], poly.shape[2])
+    num = len(poly_reshaped)
     j = num - 1
     c = False
     for i in range(num):
-        if (x == poly[i][0]) and (y == poly[i][1]) and (A == poly[i][2]):
+        if abs(A) == Amax:
+            return True  # on the [-Amax, Amax] boundary surface
+        if (x == poly_reshaped[i][0]) and (y == poly_reshaped[i][1]) and (A == poly_reshaped[i][2]):
             # point is a corner
             return True
-        if ((poly[i][1] > y) != (poly[j][1] > y)):
-            slope = (x-poly[i][0])*(poly[j][1]-poly[i][1])-(poly[j][0]-poly[i][0])*(y-poly[i][1])
+        if ((poly_reshaped[i][1] > y) != (poly_reshaped[j][1] > y)):
+            slope = (x-poly_reshaped[i][0])*(poly_reshaped[j][1]-poly_reshaped[i][1])-(poly_reshaped[j][0]-poly_reshaped[i][0])*(y-poly_reshaped[i][1])
             if slope == 0:
                 # point is on boundary
                 return True
-            if (slope < 0) != (poly[j][1] < poly[i][1]):
+            if (slope < 0) != (poly_reshaped[j][1] < poly_reshaped[i][1]):
                 c = not c
         j = i
     return c
