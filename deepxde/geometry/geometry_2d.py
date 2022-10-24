@@ -155,11 +155,7 @@ class Ellipse_A(Geometry):
             [[0.0, 0.0, 0.0]]), eps, kappa, delta
         self.tau = np.linspace(0, 2 * np.pi, self.N)
         Arange = np.linspace(-Amax, Amax, self.num_A)
-        #
-        # RA = np.outer(1 + self.eps * np.cos(theta + np.arcsin(self.delta)), Arange)
-        # ZA = np.outer(self.eps * self.kappa * np.sin(theta), Arange)
-        # RZA = np.transpose(np.stack((RA, ZA)), [1, 2, 0])
-        # RZA = RZA.reshape(self.N * self.num_A, 2)
+
         R_ellipse = np.outer(1 + self.eps * np.cos(self.tau + np.arcsin(self.delta) * np.sin(self.tau)),
                              np.ones(self.num_A)
                              )

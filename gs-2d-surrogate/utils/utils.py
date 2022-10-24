@@ -104,7 +104,7 @@ def evaluate(ITER,model):
     return x,y,psi_pred, psi_true, error
 
 
-def evaluate_A(ITER,model):
+def evaluate_A(ITER, model, Amax):
     '''
     ##TODO: Need to break this file and refactor
     evaluate() create a meshgrid and calculate
@@ -117,13 +117,24 @@ def evaluate_A(ITER,model):
         psi_pred: evaluated value from PINN model
         error: relative error betwen psi_tre and psi_pred
     '''
-    N = 1001
+    N = 200
+    num_A = 10
     eps, kappa, delta = ITER.eps, ITER.kappa, ITER.delta
     tau = np.linspace(0, 2 * np.pi, N)
-    Arange = np.linspace(-0.1, 0.1, N)
+    Arange = np.linspace(-Amax, Amax, num_A)
+
+    R_ellipse = np.outer(1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)),
+                             np.ones(num_A)
+                             )
+    Z_ellipse = np.outer(eps * kappa * np.sin(tau),
+                             np.ones(num_A)
+                             )
+    A_ellipse = np.outer(np.ones(N), Arange)
+    x_ellipse = np.transpose(np.asarray([R_ellipse, Z_ellipse, A_ellipse]), [1, 2, 0])
+    x_ellipse = x_ellipse.reshape(N * num_A, 3)
     # Define boundary of ellipse
-    x_ellipse = np.asarray([1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)),
-                    eps * kappa * np.sin(tau), Arange]).T[::-1]
+    # x_ellipse = np.asarray([1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)),
+    #                 eps * kappa * np.sin(tau), Arange]).T[::-1]
 
     # # make mesh
     # nx = 500
@@ -144,14 +155,17 @@ def evaluate_A(ITER,model):
     high_point  = (1.1*ITER.kappa * ITER.eps*(1+zoom) )
     low_point   = (-1.1*ITER.kappa * ITER.eps*(1+zoom) )
     x, y, A = np.meshgrid(
-        np.linspace(inner_point, outer_point , nx),
+        np.linspace(inner_point, outer_point, nx),
         np.linspace(low_point, high_point, ny),
-        np.linspace(-0.1, 0.1, nx)
+        np.linspace(-Amax, Amax, num_A),
+        indexing='ij'
     )
 
     X = np.vstack((np.ravel(x), np.ravel(y), np.ravel(A))).T
+    print(X.shape)
 
     X_bc = np.vstack((np.ravel(x_ellipse[:,0]), np.ravel(x_ellipse[:,1]), np.ravel(x_ellipse[:,2]))).T
+    print(X_bc.shape)
     output_bc_pred = model.predict(X_bc).reshape(-1)
     output_bc_true = []
     for point in X_bc:
@@ -166,15 +180,15 @@ def evaluate_A(ITER,model):
         ITER.solve_coefficients()
         psi_true_lin.append(ITER.psi_func(point[0], point[1], point[2]))
     psi_true_lin = np.array(psi_true_lin)
-    psi_true = np.copy(np.reshape(psi_true_lin, [nx, ny, nx]))
+    psi_true = np.copy(np.reshape(psi_true_lin, [nx, ny, num_A]))
 
     psi_pred_lin = model.predict(X)
     psi_pred_lin = psi_pred_lin.reshape(-1)
-    psi_pred = np.copy(np.reshape(psi_pred_lin, [nx, ny, nx]))
+    psi_pred = np.copy(np.reshape(psi_pred_lin, [nx, ny, num_A]))
 
     e_max = max((output_bc_pred-np.array(output_bc_true))**2/min(output_bc_pred)**2)
     e = (psi_pred_lin-np.array(psi_true_lin))**2/min(psi_pred_lin)**2
-    error = np.reshape(e, [nx, ny, nx])
+    error = np.reshape(e, [nx, ny, num_A])
     error[error>e_max] = e_max
 
     return x, y, A, psi_pred, psi_true, error
