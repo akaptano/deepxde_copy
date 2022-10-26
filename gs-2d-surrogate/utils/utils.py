@@ -104,7 +104,103 @@ def evaluate(ITER,model):
     return x,y,psi_pred, psi_true, error
 
 
-def evaluate_A(ITER, model, Amax):
+def evaluate_A(ITER, model, Amax, num_A):
+    '''
+    ##TODO: Need to break this file and refactor
+    evaluate() create a meshgrid and calculate
+    psi_true,psi_pred, and relative error
+    Input:
+        ITER: GS_Linear function that contains shape parameter
+        model: tf.model that contains the trained model
+    output:
+        psi_true: analytical solution
+        psi_pred: evaluated value from PINN model
+        error: relative error betwen psi_tre and psi_pred
+    '''
+    N = 200
+    eps, kappa, delta = ITER.eps, ITER.kappa, ITER.delta
+    tau = np.linspace(0, 2 * np.pi, N)
+    Arange = np.linspace(-Amax, Amax, num_A)
+
+    R_ellipse = np.outer(1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)),
+                             np.ones(num_A)
+                             )
+    Z_ellipse = np.outer(eps * kappa * np.sin(tau),
+                             np.ones(num_A)
+                             )
+    A_ellipse = np.outer(np.ones(N), Arange)
+    x_ellipse = np.transpose(np.asarray([R_ellipse, Z_ellipse, A_ellipse]), [1, 2, 0])
+    x_ellipse = x_ellipse.reshape(N * num_A, 3)
+    # Define boundary of ellipse
+    # x_ellipse = np.asarray([1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)),
+    #                 eps * kappa * np.sin(tau), Arange]).T[::-1]
+
+    # # make mesh
+    # nx = 500
+    # ny = 500
+    # zoom = 0.05
+    # x, y = np.meshgrid(
+    #     np.linspace(1 - eps*(1+zoom), 1 + eps*(1+zoom), nx),
+    #     np.linspace(-kappa * eps*(1+zoom), kappa * eps*(1+zoom), ny),
+    # )
+    # X = np.vstack((np.ravel(x), np.ravel(y))).T
+
+    # make mesh
+    nx = 51
+    ny = 51
+    zoom = 0.2
+    inner_point = (1 - 1.1*ITER.eps*(1+zoom))
+    outer_point = (1 + 1.1*ITER.eps*(1+zoom))
+    high_point  = (1.1*ITER.kappa * ITER.eps*(1+zoom) )
+    low_point   = (-1.1*ITER.kappa * ITER.eps*(1+zoom) )
+    x, y, A = np.meshgrid(
+        np.linspace(inner_point, outer_point, nx),
+        np.linspace(low_point, high_point, ny),
+        np.linspace(-Amax, Amax, num_A),
+        indexing='ij'
+    )
+    ones = np.ones(nx * ny * num_A)
+    ones_ellipse = np.ones(N * num_A)
+
+    X = np.vstack((
+        np.ravel(x), np.ravel(y), np.ravel(A),
+        ITER.eps * ones, ITER.kappa * ones, ITER.delta * ones
+    )).T
+    print(X.shape)
+
+    X_bc = np.vstack((np.ravel(x_ellipse[:,0]), np.ravel(x_ellipse[:,1]), np.ravel(x_ellipse[:,2]),
+                      ITER.eps * ones_ellipse, ITER.kappa * ones_ellipse, ITER.delta * ones_ellipse
+                      )).T
+    print(X_bc.shape)
+    output_bc_pred = model.predict(X_bc).reshape(-1)
+    output_bc_true = []
+    for point in X_bc:
+        ITER.get_BCs(point[2])
+        ITER.solve_coefficients()
+        output_bc_true.append(ITER.psi_func(point[0], point[1], point[2]))
+
+    # Calculate corresponding psi
+    psi_true_lin = []
+    for point in X:
+        ITER.get_BCs(point[2])
+        ITER.solve_coefficients()
+        psi_true_lin.append(ITER.psi_func(point[0], point[1], point[2]))
+    psi_true_lin = np.array(psi_true_lin)
+    psi_true = np.copy(np.reshape(psi_true_lin, [nx, ny, num_A]))
+
+    psi_pred_lin = model.predict(X)
+    psi_pred_lin = psi_pred_lin.reshape(-1)
+    psi_pred = np.copy(np.reshape(psi_pred_lin, [nx, ny, num_A]))
+
+    e_max = max((output_bc_pred-np.array(output_bc_true))**2/min(output_bc_pred)**2)
+    e = (psi_pred_lin-np.array(psi_true_lin))**2/min(psi_pred_lin)**2
+    error = np.reshape(e, [nx, ny, num_A])
+    error[error>e_max] = e_max
+
+    return x, y, A, psi_pred, psi_true, error
+
+
+def evaluate_parametric(ITER, model, Amax):
     '''
     ##TODO: Need to break this file and refactor
     evaluate() create a meshgrid and calculate
