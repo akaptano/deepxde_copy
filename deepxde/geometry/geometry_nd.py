@@ -161,10 +161,11 @@ class HyperEllipticalToroid(Geometry):
         kappa_range=(0.1, 0.3),
         delta_range=(0.1, 0.3),
         x_ellipse=[],
-        Amax=0.1
+        Amax=0.1,
+        num_param=2,
     ):
         self.N = 100
-        self.num_param = 2
+        self.num_param = num_param
         self.center = np.array(
             [[0.0, 0.0, 0.0,
               eps_range[1] - eps_range[0],
