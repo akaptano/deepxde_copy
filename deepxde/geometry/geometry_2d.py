@@ -190,7 +190,6 @@ class Ellipse_A(Geometry):
         tol = np.max(np.linalg.norm(self.x_ellipse[:-1, 0:2] - self.x_ellipse[1:, 0:2], axis=-1))
         abs_diff = np.abs(x[:, 0:2] - self.x_ellipse[:, 0:2])
         return np.any(np.sqrt(abs_diff[:, 0:1]**2 + abs_diff[:, 1:2]**2) <= tol)
-        # or np.allclose(abs(abs_diff[:, 2:3]), self.Amax)
 
     def random_points(self, n, random="pseudo"):
         x = []

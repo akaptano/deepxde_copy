@@ -55,6 +55,17 @@ class Model(object):
         metrics=None,
         decay=None,
         loss_weights=None,
+        options={
+            "disp": None,
+            "maxcor": 50,
+            "ftol": np.finfo(float).eps,
+            "gtol": 1e-8,
+            "eps": 1e-8,
+            "maxfun": 15000,
+            "maxiter": 15000,
+            "iprint": -1,
+            "maxls": 50,
+        }
     ):
         """Configures the model for training.
 
@@ -96,7 +107,8 @@ class Model(object):
         self.totalloss = tf.reduce_sum(self.losses)
 
         self.train_op = train_module.get_train_op(
-            self.totalloss, self.optimizer, lr=lr, decay=decay
+            self.totalloss, self.optimizer, lr=lr, decay=decay,
+            options=options
         )
 
         metrics = metrics or []

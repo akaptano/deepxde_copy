@@ -14,7 +14,23 @@ def is_scipy_opts(optimizer):
     return optimizer in scipy_opts
 
 
-def get_train_op(loss, optimizer, lr=None, decay=None):
+def get_train_op(
+    loss,
+    optimizer,
+    lr=None,
+    decay=None,
+    options={
+        "disp": None,
+        "maxcor": 50,
+        "ftol": np.finfo(float).eps,
+        "gtol": 1e-8,
+        "eps": 1e-8,
+        "maxfun": 15000,
+        "maxiter": 15000,
+        "iprint": -1,
+        "maxls": 50,
+    }
+):
     if is_scipy_opts(optimizer):
         if backend.is_tf_1():
             ScipyOptimizerInterface = tf.contrib.opt.ScipyOptimizerInterface
@@ -25,17 +41,7 @@ def get_train_op(loss, optimizer, lr=None, decay=None):
         return ScipyOptimizerInterface(
             loss,
             method=optimizer,
-            options={
-                "disp": None,
-                "maxcor": 50,
-                "ftol": np.finfo(float).eps,
-                "gtol": 1e-8,
-                "eps": 1e-8,
-                "maxfun": 15000,
-                "maxiter": 15000,
-                "iprint": -1,
-                "maxls": 50,
-            },
+            options=options,
         )
 
     if lr is None:
