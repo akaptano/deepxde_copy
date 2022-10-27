@@ -15,6 +15,7 @@ from .geometry_3d import Sphere
 from .geometry_nd import Hypercube
 from .geometry_nd import Hypersphere
 from .geometry_nd import HyperEllipticalToroid
+from .geometry_nd import HyperFourierEllipse
 from .sampler import sample
 from .timedomain import GeometryXTime
 from .timedomain import TimeDomain
@@ -36,6 +37,7 @@ __all__ = [
     "Hypercube",
     "Hypersphere",
     "HyperEllipticalToroid",
+    "HyperFourierEllipse",
     "GeometryXTime",
     "TimeDomain",
     "sample",

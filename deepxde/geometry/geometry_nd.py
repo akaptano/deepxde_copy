@@ -161,10 +161,11 @@ class HyperEllipticalToroid(Geometry):
         kappa_range=(0.1, 0.3),
         delta_range=(0.1, 0.3),
         x_ellipse=[],
-        Amax=0.1
+        Amax=0.1,
+        num_param=2,
     ):
         self.N = 100
-        self.num_param = 2
+        self.num_param = num_param
         self.center = np.array(
             [[0.0, 0.0, 0.0,
               eps_range[1] - eps_range[0],
@@ -293,6 +294,300 @@ class HyperEllipticalToroid(Geometry):
                 [R_ellipse, Z_ellipse, A_ellipse,
                  eps_ellipse, kappa_ellipse, delta_ellipse]),
             [1, 2, 3, 4, 5, 0]).reshape(n * self.num_param ** 4, 6)
+        return X
+
+
+class HyperFourierEllipse(Geometry):
+    """
+        Class for parametric PINNs for toroidal shapes depending on mpol
+        shape parameters and one parameter that controls the pressure profile,
+        so number of inputs is
+        2 (X, Y) + 1 (A) + 2 * mpol (R(0, 1), ..., R(0, mpol), Z(0, 1), ..., Z(0, mpol))
+    """
+    def __init__(
+        self,
+        mpol=1,
+        x_ellipse=[],
+        Amax=0.1,
+        num_param=2,
+        RZm_max=0.1,
+        minor_radius=0.8
+    ):
+        if minor_radius >= 1.0:
+            raise ValueError(
+                'Minor radius must be less than 1, since the major radius'
+                ' is hard-coded to this value'
+            )
+        self.N = 100
+        self.num_param = num_param
+        self.num_dims = 3 + 2 * mpol
+        self.tau = np.linspace(0, 2 * np.pi, self.N)
+        self.minor_radius = minor_radius
+
+        # begin with perfectly circular cross-section
+        self.center = np.zeros((3 + 2 * mpol))
+
+        Arange = np.linspace(-Amax, Amax, self.num_param)
+        Rm = np.linspace(-RZm_max, RZm_max, self.num_param)
+        Zm = np.linspace(-RZm_max, RZm_max, self.num_param)
+
+        Rm_grid = Rm
+        Zm_grid = Zm
+        for i in range(mpol + 1):
+            Rm_grid = np.outer(Rm_grid, Rm).reshape(2 * mpol * np.ones(i + 2, dtype=int))
+            Zm_grid = np.outer(Zm_grid, Zm).reshape(2 * mpol * np.ones(i + 2, dtype=int))
+        # Rm_grid = [Rm] * mpol
+        print(Rm_grid.shape)
+
+        # assume that minor radius R(0, 0) = 1
+        R_ellipse = np.ones((self.N, self.num_param, *Rm_grid.shape))
+        R0 = np.outer(
+            self.minor_radius * np.cos(self.tau),
+            np.ravel(np.ones((self.num_param, *Rm_grid.shape)))
+            ).reshape(R_ellipse.shape)
+        R_ellipse = (1 + R0) * R_ellipse
+
+        # Z(0, 0) = sin(tau)
+        Z_ellipse = np.ones((self.N, self.num_param, *Rm_grid.shape))
+        Z0 = np.outer(
+            self.minor_radius * np.sin(self.tau),
+            np.ravel(np.ones((self.num_param, *Rm_grid.shape)))
+            ).reshape(Z_ellipse.shape)
+        Z_ellipse = Z0 * Z_ellipse
+
+        A_ellipse = np.zeros((self.N, self.num_param, *Rm_grid.shape))
+
+        for i in range(self.num_param):
+            for m in range(1, mpol + 1):  # sum over m
+                R_ellipse[:, i, ...] += np.outer(
+                    np.cos(m * self.tau),
+                    np.ravel(Rm_grid)
+                    ).reshape(self.N, *Rm_grid.shape)
+                Z_ellipse[:, i, ...] += np.outer(
+                    np.sin(m * self.tau),
+                    np.ravel(Zm_grid)
+                    ).reshape(self.N, *Rm_grid.shape)
+            A_ellipse[:, i, ...] = Arange[i]
+
+        self.R_ellipse = R_ellipse
+        self.Z_ellipse = Z_ellipse
+
+        Rm_grid = np.ones((self.N, self.num_param, *Rm_grid.shape)) * Rm_grid
+        Zm_grid = np.ones((self.N, self.num_param, *Zm_grid.shape)) * Zm_grid
+
+        # Define boundary of hyper-cross-section
+        inds = np.roll(np.arange(0, len(Rm_grid.shape) + 1), -1)
+        x_ellipse = np.transpose(
+            np.array([R_ellipse, Z_ellipse, A_ellipse]),
+            inds
+        )
+        start = 0
+        end = self.num_param
+        for i in range(mpol):
+            Rm_grid_partial = np.ones(Rm_grid.shape)
+            Zm_grid_partial = np.ones(Zm_grid.shape)
+            slc = [slice(None)] * len(Rm_grid.shape)
+            slc[2 + i] = slice(start, end)
+            Rm_grid_partial[slc] = Rm
+            Zm_grid_partial[slc] = Zm
+            Rm_grid_partial = Rm_grid_partial.reshape(*Rm_grid_partial.shape, 1)
+            Zm_grid_partial = Zm_grid_partial.reshape(*Zm_grid_partial.shape, 1)
+            x_ellipse = np.concatenate([x_ellipse, Rm_grid_partial], axis=-1)
+            x_ellipse = np.concatenate([x_ellipse, Zm_grid_partial], axis=-1)
+
+        print(x_ellipse.shape, Rm_grid.shape)
+        self.x_ellipse = x_ellipse.reshape(
+            self.N * self.num_param ** (1 + 2 * mpol),
+            3 + 2 * mpol
+        )
+
+        # setting xmin and xmax for bbox
+        xmin = np.array([
+            1 - self.minor_radius - RZm_max,
+            -1 - RZm_max - self.minor_radius,
+            -Amax])
+        xmax = np.array([
+            1 + self.minor_radius + RZm_max,
+            1 + RZm_max + self.minor_radius,
+            Amax])
+
+        for m in range(2 * mpol):
+            xmin = np.concatenate((xmin, [-RZm_max]))
+            xmax = np.concatenate((xmax, [RZm_max]))
+
+        self.Amax = Amax
+        self.RZm_max = RZm_max
+
+        super(HyperFourierEllipse, self).__init__(3 + 2 * mpol, (xmin, xmax), 1)
+
+    def inside(self, x):
+        return (np.sqrt((x[:, 0:1] - 1.0) ** 2 + x[:, 1:2] ** 2) < self.minor_radius)
+        # return is_point_in_path(x[:, 0:1], x[:, 1:2], self.x_ellipse)
+
+    def on_boundary(self, x):
+        # This is not finding the distance of 2d points. Only for 1d does this work.
+        return np.array([self.point_on_boundary(x[i]) for i in range(len(x))])
+
+    def point_on_boundary(self, x):
+        # Input
+        #   x: A point i.e. array([1.0, 0.3])
+        # Output
+        #   True/False
+        tol = np.max(np.linalg.norm(self.x_ellipse[:-1, 0:2] - self.x_ellipse[1:, 0:2], axis=-1))
+        abs_diff = np.abs(x[:, 0:2] - self.x_ellipse[:, 0:2])
+        return np.any(np.sqrt(abs_diff[:, 0:1]**2 + abs_diff[:, 1:2]**2) <= tol)
+        # or np.allclose(abs(abs_diff[:, 2:3]), self.Amax)
+
+    def random_points(self, n, random="pseudo"):
+        x = []
+        vbbox = self.bbox[1] - self.bbox[0]
+        while len(x) < n:
+            x_new = np.random.rand(1, self.num_dims) * vbbox + self.bbox[0]
+            if self.inside(x_new):
+                x.append(x_new)
+        return np.vstack(x)
+
+    def uniform_boundary_points(self, n):
+        RZm_max = self.RZm_max
+        tau = np.linspace(0, 2 * np.pi, self.N)
+        Arange = np.linspace(-Amax, Amax, self.num_param)
+        Rm = np.linspace(-RZm_max, RZm_max, self.num_param)
+        Zm = np.linspace(-RZm_max, RZm_max, self.num_param)
+
+        Rm_grid = Rm
+        Zm_grid = Zm
+        for i in range(mpol + 1):
+            Rm_grid = np.outer(Rm_grid, Rm).reshape(2 * mpol * np.ones(i + 2, dtype=int))
+            Zm_grid = np.outer(Zm_grid, Zm).reshape(2 * mpol * np.ones(i + 2, dtype=int))
+
+        # assume that minor radius R(0, 0) = 1
+        R_ellipse = np.ones((n, self.num_param, *Rm_grid.shape))
+        R0 = np.outer(
+            self.minor_radius * np.cos(self.tau),
+            np.ravel(np.ones((self.num_param, *Rm_grid.shape)))
+            ).reshape(R_ellipse.shape)
+        R_ellipse = (1 + R0) * R_ellipse
+
+        # Z(0, 0) = 0
+        Z_ellipse = np.ones((self.N, self.num_param, *Rm_grid.shape))
+        Z0 = np.outer(
+            self.minor_radius * np.sin(self.tau),
+            np.ravel(np.ones((self.num_param, *Rm_grid.shape)))
+            ).reshape(Z_ellipse.shape)
+        Z_ellipse = Z0 * Z_ellipse
+
+        A_ellipse = np.zeros((n, self.num_param, *Rm_grid.shape))
+
+        for i in range(self.num_param):
+            for m in range(1, mpol + 1):  # sum over m
+                R_ellipse[:, i, ...] += np.outer(np.cos(m * self.tau), Rm_grid).reshape(n, *Rm_grid.shape)
+                Z_ellipse[:, i, ...] += np.outer(np.sin(m * self.tau), Zm_grid).reshape(n, *Rm_grid.shape)
+            A_ellipse[:, i, ...] = Arange[i]
+
+        Rm_grid = np.ones((n, self.num_param, *Rm_grid.shape)) * Rm_grid
+        Zm_grid = np.ones((n, self.num_param, *Zm_grid.shape)) * Zm_grid
+
+        # Define boundary of hyper-cross-section
+        inds = np.roll(np.arange(0, len(Rm_grid.shape) + 1), -1)
+        X = np.transpose(
+            np.array([R_ellipse, Z_ellipse, A_ellipse]),
+            inds
+        )
+        start = 0
+        end = self.num_param
+        for i in range(mpol):
+            Rm_grid_partial = np.ones(Rm_grid.shape)
+            Zm_grid_partial = np.ones(Zm_grid.shape)
+            slc = [slice(None)] * len(Rm_grid.shape)
+            slc[2 + i] = slice(start, end)
+            Rm_grid_partial[slc] = Rm
+            Zm_grid_partial[slc] = Zm
+            Rm_grid_partial = Rm_grid_partial.reshape(*Rm_grid_partial.shape, 1)
+            Zm_grid_partial = Zm_grid_partial.reshape(*Zm_grid_partial.shape, 1)
+            X = np.concatenate([X, Rm_grid_partial], axis=-1)
+            X = np.concatenate([X, Zm_grid_partial], axis=-1)
+
+        inds = np.roll(np.arange(0, len(x_ellipse.shape)), -1)
+        X = np.transpose(
+            X,
+            inds
+        )
+        X = X.reshape(
+            n * self.num_param ** (1 + 2 * mpol),
+            3 + 2 * mpol
+        )
+        return X
+
+    def random_boundary_points(self, n, random="pseudo"):
+        u = sample(n, 1, random)
+        tau = 2 * np.pi * u
+        RZm_max = self.RZm_max
+        Arange = (sample(self.num_param, 1, random) - 0.5) * 2 * self.Amax
+        Rm = (sample(self.num_param, 1, random) - 0.5) * 2 * RZm_max
+        Zm = (sample(self.num_param, 1, random) - 0.5) * 2 * RZm_max
+
+        Rm_grid = Rm
+        Zm_grid = Zm
+        for i in range(mpol + 1):
+            Rm_grid = np.outer(Rm_grid, Rm).reshape(2 * mpol * np.ones(i + 2, dtype=int))
+            Zm_grid = np.outer(Zm_grid, Zm).reshape(2 * mpol * np.ones(i + 2, dtype=int))
+
+        # assume that major radius R(0, 0) = 1
+        R_ellipse = np.ones((n, self.num_param, *Rm_grid.shape))
+        R0 = np.outer(
+            self.minor_radius * np.cos(self.tau),
+            np.ravel(np.ones((self.num_param, *Rm_grid.shape)))
+            ).reshape(R_ellipse.shape)
+        R_ellipse = (1 + R0) * R_ellipse
+
+        # Z(0, 0) = 0
+        Z_ellipse = np.ones((self.N, self.num_param, *Rm_grid.shape))
+        Z0 = np.outer(
+            self.minor_radius * np.sin(self.tau),
+            np.ravel(np.ones((self.num_param, *Rm_grid.shape)))
+            ).reshape(Z_ellipse.shape)
+        Z_ellipse = Z0 * Z_ellipse
+
+        A_ellipse = np.zeros((n, self.num_param, *Rm_grid.shape))
+
+        for i in range(self.num_param):
+            for m in range(1, mpol + 1):  # sum over m
+                R_ellipse[:, i, ...] += np.outer(np.cos(m * self.tau), Rm_grid).reshape(n, *Rm_grid.shape)
+                Z_ellipse[:, i, ...] += np.outer(np.sin(m * self.tau), Zm_grid).reshape(n, *Rm_grid.shape)
+            A_ellipse[:, i, ...] = Arange[i]
+
+        Rm_grid = np.ones((n, self.num_param, *Rm_grid.shape)) * Rm_grid
+        Zm_grid = np.ones((n, self.num_param, *Zm_grid.shape)) * Zm_grid
+
+        # Define boundary of hyper-cross-section
+        inds = np.roll(np.arange(0, len(Rm_grid.shape) + 1), -1)
+        X = np.transpose(
+            np.array([R_ellipse, Z_ellipse, A_ellipse]),
+            inds
+        )
+        start = 0
+        end = self.num_param
+        for i in range(mpol):
+            Rm_grid_partial = np.ones(Rm_grid.shape)
+            Zm_grid_partial = np.ones(Zm_grid.shape)
+            slc = [slice(None)] * len(Rm_grid.shape)
+            slc[2 + i] = slice(start, end)
+            Rm_grid_partial[slc] = Rm
+            Zm_grid_partial[slc] = Zm
+            Rm_grid_partial = Rm_grid_partial.reshape(*Rm_grid_partial.shape, 1)
+            Zm_grid_partial = Zm_grid_partial.reshape(*Zm_grid_partial.shape, 1)
+            X = np.concatenate([X, Rm_grid_partial], axis=-1)
+            X = np.concatenate([X, Zm_grid_partial], axis=-1)
+
+        inds = np.roll(np.arange(0, len(x_ellipse.shape)), -1)
+        X = np.transpose(
+            X,
+            inds
+        )
+        X = X.reshape(
+            n * self.num_param ** (1 + 2 * mpol),
+            3 + 2 * mpol
+        )
         return X
 
 
