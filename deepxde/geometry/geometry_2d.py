@@ -99,6 +99,9 @@ class Ellipse(Geometry):
     def inside(self, x):
         return is_point_in_path(x[:, 0:1], x[:, 1:2], self.x_ellipse)
 
+    def strictly_inside(self, x):
+        return is_point_in_poly(x[:, 0:1], x[:, 1:2], self.x_ellipse)
+
     def on_boundary(self, x):
         # This is not finding the distance of 2d points. Only for 1d does this work.
         return np.array([self.point_on_boundary(x[i]) for i in range(len(x))])
@@ -755,6 +758,35 @@ def is_point_in_path(x: int, y: int, poly) -> bool:
                 c = not c
         j = i
     return c
+
+
+def is_point_in_poly(x, y, poly) -> bool:
+    # Determine if the point is in the polygon.
+    #
+    # Args:
+    #   x -- The x coordinates of point.
+    #   y -- The y coordinates of point.
+    #   poly -- a list of tuples [(x, y), (x, y), ...]
+    #
+    # Returns:
+    #   True if the point is in the path NOT if on a corner or on the boundary
+    num = len(poly)
+    j = num - 1
+    c = False
+    for i in range(num):
+        if (x == poly[i][0]) and (y == poly[i][1]):
+            # point is a corner
+            return False
+        if ((poly[i][1] > y) != (poly[j][1] > y)):
+            slope = (x-poly[i][0])*(poly[j][1]-poly[i][1])-(poly[j][0]-poly[i][0])*(y-poly[i][1])
+            if slope == 0:
+                # point is on boundary
+                return False
+            if (slope < 0) != (poly[j][1] < poly[i][1]):
+                c = not c
+        j = i
+    return c
+
 
 
 def is_point_in_path_A(Amax, x: int, y: int, A: int, poly) -> bool:

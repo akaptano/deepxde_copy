@@ -97,7 +97,7 @@ def evaluate(ITER,model):
     #filter
     e_max = max((output_bc_pred-np.array(output_bc_true))**2/min(output_bc_pred)**2)
 
-    e = (psi_pred_lin-np.array(psi_true_lin))**2/min(psi_pred_lin)**2
+    e = (psi_pred_lin-np.array(psi_true_lin))**2/max(abs(psi_true_lin))**2
     error = np.reshape(e, [nx, ny])
     error[error>e_max] = e_max
 
