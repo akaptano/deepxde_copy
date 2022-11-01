@@ -6,9 +6,10 @@ import numpy as np
 from matplotlib import pyplot as plt
 import deepxde as dde
 import os
+from deepxde.backend import tf
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+#os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 ######################
 # ITER Configuration #
@@ -108,8 +109,7 @@ data = dde.data.PDE(
     #anchors=observe_x,
     num_domain=8,
     num_boundary=0,
-    x_test=x_test,
-    y_test=u_test,
+    num_test=n_test,
     train_distribution="LHS"
 )
 

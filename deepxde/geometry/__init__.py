@@ -25,9 +25,9 @@ __all__ = [
 from .csg import CSGDifference, CSGIntersection, CSGUnion
 from .geometry import Geometry
 from .geometry_1d import Interval
-from .geometry_2d import Disk, Polygon, Rectangle, Triangle
+from .geometry_2d import Disk, Ellipse, Ellipse_A, Polygon, Rectangle, Triangle
 from .geometry_3d import Cuboid, Sphere
-from .geometry_nd import Hypercube, Hypersphere
+from .geometry_nd import Hypercube, Hypersphere, HyperEllipticalToroid, HyperFourierEllipse
 from .pointcloud import PointCloud
 from .sampler import sample
 from .timedomain import GeometryXTime, TimeDomain
