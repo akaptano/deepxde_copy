@@ -1,18 +1,17 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import itertools
 
 import numpy as np
 
 from .geometry_1d import Interval
+from .geometry_2d import Rectangle
+from .geometry_3d import Cuboid
+from .geometry_nd import Hypercube
 from .. import config
 
 
 class TimeDomain(Interval):
     def __init__(self, t0, t1):
-        super(TimeDomain, self).__init__(t0, t1)
+        super().__init__(t0, t1)
         self.t0 = t0
         self.t1 = t1
 
@@ -20,7 +19,7 @@ class TimeDomain(Interval):
         return np.isclose(t, self.t0).flatten()
 
 
-class GeometryXTime(object):
+class GeometryXTime:
     def __init__(self, geometry, timedomain):
         self.geometry = geometry
         self.timedomain = timedomain
@@ -76,9 +75,30 @@ class GeometryXTime(object):
         return xt
 
     def random_points(self, n, random="pseudo"):
+        if isinstance(self.geometry, Interval):
+            geom = Rectangle(
+                [self.geometry.l, self.timedomain.t0],
+                [self.geometry.r, self.timedomain.t1],
+            )
+            return geom.random_points(n, random=random)
+
+        if isinstance(self.geometry, Rectangle):
+            geom = Cuboid(
+                [self.geometry.xmin[0], self.geometry.xmin[1], self.timedomain.t0],
+                [self.geometry.xmax[0], self.geometry.xmax[1], self.timedomain.t1],
+            )
+            return geom.random_points(n, random=random)
+
+        if isinstance(self.geometry, (Cuboid, Hypercube)):
+            geom = Hypercube(
+                np.append(self.geometry.xmin, self.timedomain.t0),
+                np.append(self.geometry.xmax, self.timedomain.t1),
+            )
+            return geom.random_points(n, random=random)
+
         x = self.geometry.random_points(n, random=random)
         t = self.timedomain.random_points(n, random=random)
-        t = np.random.default_rng().permutation(t)
+        t = np.random.permutation(t)
         return np.hstack((x, t))
 
     def uniform_boundary_points(self, n):
@@ -122,7 +142,7 @@ class GeometryXTime(object):
     def random_boundary_points(self, n, random="pseudo"):
         x = self.geometry.random_boundary_points(n, random=random)
         t = self.timedomain.random_points(n, random=random)
-        t = np.random.default_rng().permutation(t)
+        t = np.random.permutation(t)
         return np.hstack((x, t))
 
     def uniform_initial_points(self, n):
@@ -132,12 +152,12 @@ class GeometryXTime(object):
             print(
                 "Warning: {} points required, but {} points sampled.".format(n, len(x))
             )
-        return np.hstack((x, np.full([len(x), 1], t)))
+        return np.hstack((x, np.full([len(x), 1], t, dtype=config.real(np))))
 
     def random_initial_points(self, n, random="pseudo"):
         x = self.geometry.random_points(n, random=random)
         t = self.timedomain.t0
-        return np.hstack((x, np.full([n, 1], t)))
+        return np.hstack((x, np.full([n, 1], t, dtype=config.real(np))))
 
     def periodic_point(self, x, component):
         xp = self.geometry.periodic_point(x[:, :-1], component)

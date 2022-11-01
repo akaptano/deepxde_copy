@@ -1,7 +1,3 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import itertools
 
 import numpy as np
@@ -18,28 +14,13 @@ class Cuboid(Hypercube):
     """
 
     def __init__(self, xmin, xmax):
-        super(Cuboid, self).__init__(xmin, xmax)
+        super().__init__(xmin, xmax)
         dx = self.xmax - self.xmin
         self.area = 2 * np.sum(dx * np.roll(dx, 2))
 
     def random_boundary_points(self, n, random="pseudo"):
-        x_corner = np.vstack(
-            (
-                self.xmin,
-                [self.xmin[0], self.xmax[1], self.xmin[2]],
-                [self.xmax[0], self.xmax[1], self.xmin[2]],
-                [self.xmax[0], self.xmin[1], self.xmin[2]],
-                self.xmax,
-                [self.xmin[0], self.xmax[1], self.xmax[2]],
-                [self.xmin[0], self.xmin[1], self.xmax[2]],
-                [self.xmax[0], self.xmin[1], self.xmax[2]],
-            )
-        )
-        if n <= 8:
-            return x_corner[np.random.choice(8, size=n, replace=False)]
-
-        pts = [x_corner]
-        density = (n - 8) / self.area
+        pts = []
+        density = n / self.area
         rect = Rectangle(self.xmin[:-1], self.xmax[:-1])
         for z in [self.xmin[-1], self.xmax[-1]]:
             u = rect.random_points(int(np.ceil(density * rect.area)), random=random)
@@ -94,4 +75,4 @@ class Sphere(Hypersphere):
     """
 
     def __init__(self, center, radius):
-        super(Sphere, self).__init__(center, radius)
+        super().__init__(center, radius)

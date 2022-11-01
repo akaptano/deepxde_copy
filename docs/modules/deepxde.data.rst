@@ -1,8 +1,5 @@
-deepxde.data package
-====================
-
-Submodules
-----------
+deepxde.data
+============
 
 deepxde.data.constraint module
 ------------------------------
@@ -36,18 +33,26 @@ deepxde.data.fpde module
    :undoc-members:
    :show-inheritance:
 
-deepxde.data.func module
-------------------------
-
-.. automodule:: deepxde.data.func
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 deepxde.data.func\_constraint module
 ------------------------------------
 
 .. automodule:: deepxde.data.func_constraint
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+deepxde.data.function module
+----------------------------
+
+.. automodule:: deepxde.data.function
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+deepxde.data.function\_spaces module
+------------------------------------
+
+.. automodule:: deepxde.data.function_spaces
    :members:
    :undoc-members:
    :show-inheritance:
@@ -76,18 +81,26 @@ deepxde.data.mf module
    :undoc-members:
    :show-inheritance:
 
-deepxde.data.op\_dataset module
--------------------------------
-
-.. automodule:: deepxde.data.op_dataset
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 deepxde.data.pde module
 -----------------------
 
 .. automodule:: deepxde.data.pde
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+deepxde.data.pde\_operator module
+---------------------------------
+
+.. automodule:: deepxde.data.pde_operator
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+deepxde.data.quadruple module
+-----------------------------
+
+.. automodule:: deepxde.data.quadruple
    :members:
    :undoc-members:
    :show-inheritance:
@@ -100,10 +113,11 @@ deepxde.data.sampler module
    :undoc-members:
    :show-inheritance:
 
-Module contents
----------------
+deepxde.data.triple module
+--------------------------
 
-.. automodule:: deepxde.data
+.. automodule:: deepxde.data.triple
    :members:
    :undoc-members:
    :show-inheritance:
+

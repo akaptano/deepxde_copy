@@ -1,32 +1,42 @@
-from __future__ import absolute_import
-
-from .constraint import Constraint
-from .dataset import DataSet
-from .fpde import FPDE
-from .fpde import TimeFPDE
-from .func import Func
-from .func_constraint import FuncConstraint
-from .ide import IDE
-from .mf import MfDataSet
-from .mf import MfFunc
-from .mfopdataset import MfOpDataSet
-from .op_dataset import OpDataSet
-from .pde import PDE
-from .pde import TimePDE
-
-
 __all__ = [
+    "BatchSampler",
+    "Chebyshev",
     "Constraint",
+    "Data",
     "DataSet",
     "FPDE",
-    "Func",
+    "Function",
     "FuncConstraint",
+    "GRF",
+    "GRF_KL",
+    "GRF2D",
     "IDE",
     "MfDataSet",
     "MfFunc",
-    "MfOpDataSet",
-    "OpDataSet",
     "PDE",
+    "PDEOperator",
+    "PDEOperatorCartesianProd",
+    "PowerSeries",
+    "Quadruple",
+    "QuadrupleCartesianProd",
     "TimeFPDE",
     "TimePDE",
+    "Triple",
+    "TripleCartesianProd",
+    "wasserstein2",
 ]
+
+from .constraint import Constraint
+from .data import Data
+from .dataset import DataSet
+from .fpde import FPDE, TimeFPDE
+from .function import Function
+from .function_spaces import Chebyshev, GRF, GRF_KL, GRF2D, PowerSeries, wasserstein2
+from .func_constraint import FuncConstraint
+from .ide import IDE
+from .mf import MfDataSet, MfFunc
+from .pde import PDE, TimePDE
+from .pde_operator import PDEOperator, PDEOperatorCartesianProd
+from .quadruple import Quadruple, QuadrupleCartesianProd
+from .sampler import BatchSampler
+from .triple import Triple, TripleCartesianProd

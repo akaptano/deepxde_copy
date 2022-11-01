@@ -1,11 +1,8 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
-from sklearn import preprocessing
 
 from .data import Data
+from .. import config
+from .. import utils
 
 
 class DataSet(Data):
@@ -29,23 +26,28 @@ class DataSet(Data):
         standardize=False,
     ):
         if X_train is not None:
-            self.train_x, self.train_y = X_train, y_train
-            self.test_x, self.test_y = X_test, y_test
+            self.train_x = X_train.astype(config.real(np))
+            self.train_y = y_train.astype(config.real(np))
+            self.test_x = X_test.astype(config.real(np))
+            self.test_y = y_test.astype(config.real(np))
         elif fname_train is not None:
             train_data = np.loadtxt(fname_train)
-            self.train_x = train_data[:, col_x]
-            self.train_y = train_data[:, col_y]
+            self.train_x = train_data[:, col_x].astype(config.real(np))
+            self.train_y = train_data[:, col_y].astype(config.real(np))
             test_data = np.loadtxt(fname_test)
-            self.test_x, self.test_y = test_data[:, col_x], test_data[:, col_y]
+            self.test_x = test_data[:, col_x].astype(config.real(np))
+            self.test_y = test_data[:, col_y].astype(config.real(np))
         else:
             raise ValueError("No training data.")
 
         self.scaler_x = None
         if standardize:
-            self._standardize()
+            self.scaler_x, self.train_x, self.test_x = utils.standardize(
+                self.train_x, self.test_x
+            )
 
-    def losses(self, targets, outputs, loss, model):
-        return [loss(targets, outputs)]
+    def losses(self, targets, outputs, loss_fn, inputs, model, aux=None):
+        return loss_fn(targets, outputs)
 
     def train_next_batch(self, batch_size=None):
         return self.train_x, self.train_y
@@ -57,14 +59,3 @@ class DataSet(Data):
         if self.scaler_x is None:
             return x
         return self.scaler_x.transform(x)
-
-    def _standardize(self):
-        def standardize_one(X1, X2):
-            scaler = preprocessing.StandardScaler(with_mean=True, with_std=True)
-            X1 = scaler.fit_transform(X1)
-            X2 = scaler.transform(X2)
-            return scaler, X1, X2
-
-        self.scaler_x, self.train_x, self.test_x = standardize_one(
-            self.train_x, self.test_x
-        )

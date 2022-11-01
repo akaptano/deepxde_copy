@@ -1,7 +1,3 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 
 from .data import Data
@@ -11,8 +7,7 @@ from ..utils import run_if_any_none
 
 
 class FuncConstraint(Data):
-    """Function approximation with constraints.
-    """
+    """Function approximation with constraints."""
 
     def __init__(
         self, geom, constraint, func, num_train, anchors, num_test, dist_train="uniform"
@@ -28,7 +23,7 @@ class FuncConstraint(Data):
         self.train_x, self.train_y = None, None
         self.test_x, self.test_y = None, None
 
-    def losses(self, targets, outputs, loss, model):
+    def losses(self, targets, outputs, loss_fn, inputs, model, aux=None):
         self.train_next_batch()
         self.test()
 
@@ -37,23 +32,25 @@ class FuncConstraint(Data):
             n += len(self.anchors)
 
         f = tf.cond(
-            tf.equal(model.net.data_id, 0),
-            lambda: self.constraint(model.net.inputs, outputs, self.train_x),
-            lambda: self.constraint(model.net.inputs, outputs, self.test_x),
+            model.net.training,
+            lambda: self.constraint(inputs, outputs, self.train_x),
+            lambda: self.constraint(inputs, outputs, self.test_x),
         )
         return [
-            loss(targets[:n], outputs[:n]),
-            loss(tf.zeros(tf.shape(f), dtype=config.real(tf)), f),
+            loss_fn(targets[:n], outputs[:n]),
+            loss_fn(tf.zeros(tf.shape(f), dtype=config.real(tf)), f),
         ]
 
     @run_if_any_none("train_x", "train_y")
     def train_next_batch(self, batch_size=None):
-        if self.dist_train == "log uniform":
-            self.train_x = self.geom.log_uniform_points(self.num_train, False)
-        elif self.dist_train == "random":
-            self.train_x = self.geom.random_points(self.num_train, "sobol")
-        else:
+        if self.dist_train == "uniform":
             self.train_x = self.geom.uniform_points(self.num_train, False)
+        elif self.dist_train == "log uniform":
+            self.train_x = self.geom.log_uniform_points(self.num_train, False)
+        else:
+            self.train_x = self.geom.random_points(
+                self.num_train, random=self.dist_train
+            )
         if self.anchors is not None:
             self.train_x = np.vstack((self.anchors, self.train_x))
         self.train_y = self.func(self.train_x)

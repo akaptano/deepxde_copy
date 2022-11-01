@@ -1,6 +1,4 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+__all__ = ["Disk", "Ellipse", "Ellipse_A", "Polygon", "Rectangle", "Triangle"]
 
 import numpy as np
 from scipy import spatial
@@ -8,17 +6,17 @@ from scipy import spatial
 from .geometry import Geometry
 from .geometry_nd import Hypercube
 from .sampler import sample
+from .. import config
 from ..utils import vectorize
 
 
 class Disk(Geometry):
     def __init__(self, center, radius):
-        self.center, self.radius = np.array(center), radius
-        super(Disk, self).__init__(
-            2, (self.center - radius, self.center + radius), 2 * radius
-        )
+        self.center = np.array(center, dtype=config.real(np))
+        self.radius = radius
+        super().__init__(2, (self.center - radius, self.center + radius), 2 * radius)
 
-        self._r2 = radius ** 2
+        self._r2 = radius**2
 
     def inside(self, x):
         return np.linalg.norm(x - self.center, axis=-1) <= self.radius
@@ -27,10 +25,10 @@ class Disk(Geometry):
         return np.isclose(np.linalg.norm(x - self.center, axis=-1), self.radius)
 
     def distance2boundary_unitdirn(self, x, dirn):
-        """https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection"""
+        # https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection
         xc = x - self.center
         ad = np.dot(xc, dirn)
-        return -ad + (ad ** 2 - np.sum(xc * xc, axis=-1) + self._r2) ** 0.5
+        return -ad + (ad**2 - np.sum(xc * xc, axis=-1) + self._r2) ** 0.5
 
     def distance2boundary(self, x, dirn):
         return self.distance2boundary_unitdirn(x, dirn / np.linalg.norm(dirn))
@@ -45,7 +43,7 @@ class Disk(Geometry):
         return _n
 
     def random_points(self, n, random="pseudo"):
-        """http://mathworld.wolfram.com/DiskPointPicking.html"""
+        # http://mathworld.wolfram.com/DiskPointPicking.html
         rng = sample(n, 2, random)
         r, theta = rng[:, 0], 2 * np.pi * rng[:, 1]
         x, y = np.cos(theta), np.sin(theta)
@@ -246,7 +244,7 @@ class Rectangle(Hypercube):
     """
 
     def __init__(self, xmin, xmax):
-        super(Rectangle, self).__init__(xmin, xmax)
+        super().__init__(xmin, xmax)
         self.perimeter = 2 * np.sum(self.xmax - self.xmin)
         self.area = np.prod(self.xmax - self.xmin)
 
@@ -288,18 +286,6 @@ class Rectangle(Hypercube):
         return x
 
     def random_boundary_points(self, n, random="pseudo"):
-        x_corner = np.vstack(
-            (
-                self.xmin,
-                [self.xmax[0], self.xmin[1]],
-                self.xmax,
-                [self.xmin[0], self.xmax[1]],
-            )
-        )
-        if n <= 4:
-            return x_corner[np.random.choice(4, size=n, replace=False)]
-        n -= 4
-
         l1 = self.xmax[0] - self.xmin[0]
         l2 = l1 + self.xmax[1] - self.xmin[1]
         l3 = l2 + l1
@@ -320,7 +306,7 @@ class Rectangle(Hypercube):
                 x.append([self.xmax[0] - l + l2, self.xmax[1]])
             else:
                 x.append([self.xmin[0], self.xmax[1] - l + l3])
-        return np.vstack((x_corner, x))
+        return np.vstack(x)
 
     @staticmethod
     def is_valid(vertices):
@@ -337,8 +323,8 @@ class Rectangle(Hypercube):
 class Triangle(Geometry):
     """Triangle.
 
-    The order of vertices can be in a clockwise or counterclockwise direction.
-    The vertices will be re-ordered in counterclockwise (right hand rule).
+    The order of vertices can be in a clockwise or counterclockwise direction. The
+    vertices will be re-ordered in counterclockwise (right hand rule).
     """
 
     def __init__(self, x1, x2, x3):
@@ -348,9 +334,9 @@ class Triangle(Geometry):
             self.area = -self.area
             x2, x3 = x3, x2
 
-        self.x1 = np.array(x1)
-        self.x2 = np.array(x2)
-        self.x3 = np.array(x3)
+        self.x1 = np.array(x1, dtype=config.real(np))
+        self.x2 = np.array(x2, dtype=config.real(np))
+        self.x3 = np.array(x3, dtype=config.real(np))
 
         self.v12 = self.x2 - self.x1
         self.v23 = self.x3 - self.x2
@@ -366,7 +352,7 @@ class Triangle(Geometry):
         self.n31_normal = clockwise_rotation_90(self.n31)
         self.perimeter = self.l12 + self.l23 + self.l31
 
-        super(Triangle, self).__init__(
+        super().__init__(
             2,
             (np.minimum(x1, np.minimum(x2, x3)), np.maximum(x1, np.maximum(x2, x3))),
             self.l12
@@ -382,8 +368,7 @@ class Triangle(Geometry):
         )
 
     def inside(self, x):
-        """See https://stackoverflow.com/a/2049593/12679294"""
-
+        # https://stackoverflow.com/a/2049593/12679294
         _sign = np.hstack(
             [
                 np.cross(self.v12, x - self.x1)[:, np.newaxis],
@@ -391,7 +376,6 @@ class Triangle(Geometry):
                 np.cross(self.v31, x - self.x3)[:, np.newaxis],
             ]
         )
-
         return ~np.logical_and(np.any(_sign > 0, axis=-1), np.any(_sign < 0, axis=-1))
 
     def on_boundary(self, x):
@@ -399,7 +383,11 @@ class Triangle(Geometry):
         l2 = np.linalg.norm(x - self.x2, axis=-1)
         l3 = np.linalg.norm(x - self.x3, axis=-1)
         return np.any(
-            np.isclose([l1 + l2 - self.l12, l2 + l3 - self.l23, l3 + l1 - self.l31], 0),
+            np.isclose(
+                [l1 + l2 - self.l12, l2 + l3 - self.l23, l3 + l1 - self.l31],
+                0,
+                atol=1e-6,
+            ),
             axis=0,
         )
 
@@ -407,33 +395,26 @@ class Triangle(Geometry):
         l1 = np.linalg.norm(x - self.x1, axis=-1, keepdims=True)
         l2 = np.linalg.norm(x - self.x2, axis=-1, keepdims=True)
         l3 = np.linalg.norm(x - self.x3, axis=-1, keepdims=True)
-        _on12 = np.isclose(l1 + l2, self.l12)
-        _on23 = np.isclose(l2 + l3, self.l23)
-        _on31 = np.isclose(l3 + l1, self.l31)
+        on12 = np.isclose(l1 + l2, self.l12)
+        on23 = np.isclose(l2 + l3, self.l23)
+        on31 = np.isclose(l3 + l1, self.l31)
         # Check points on the vertexes
-        if np.any(np.count_nonzero(np.hstack([_on12, _on23, _on31]), axis=-1) > 1):
+        if np.any(np.count_nonzero(np.hstack([on12, on23, on31]), axis=-1) > 1):
             raise ValueError(
-                "{}: Method `boundary_normal` do not accept points on the vertexes.".format(
+                "{}.boundary_normal do not accept points on the vertexes.".format(
                     self.__class__.__name__
                 )
             )
-        return (
-            self.n12_normal * _on12 + self.n23_normal * _on23 + self.n31_normal * _on31
-        )
+        return self.n12_normal * on12 + self.n23_normal * on23 + self.n31_normal * on31
 
     def random_points(self, n, random="pseudo"):
-        """There are two methods for triangle point picking.
-
-        Method 1 (used here):
-
-        - https://math.stackexchange.com/questions/18686/uniform-random-point-in-triangle
-
-        Method 2:
-
-        - http://mathworld.wolfram.com/TrianglePointPicking.html
-        - https://hbfs.wordpress.com/2010/10/05/random-points-in-a-triangle-generating-random-sequences-ii/
-        - https://stackoverflow.com/questions/19654251/random-point-inside-triangle-inside-java
-        """
+        # There are two methods for triangle point picking.
+        # Method 1 (used here):
+        # - https://math.stackexchange.com/questions/18686/uniform-random-point-in-triangle
+        # Method 2:
+        # - http://mathworld.wolfram.com/TrianglePointPicking.html
+        # - https://hbfs.wordpress.com/2010/10/05/random-points-in-a-triangle-generating-random-sequences-ii/
+        # - https://stackoverflow.com/questions/19654251/random-point-inside-triangle-inside-java
         sqrt_r1 = np.sqrt(np.random.rand(n, 1))
         r2 = np.random.rand(n, 1)
         return (
@@ -473,11 +454,6 @@ class Triangle(Geometry):
         return x
 
     def random_boundary_points(self, n, random="pseudo"):
-        x_corner = np.vstack((self.x1, self.x2, self.x3))
-        if n <= 3:
-            return x_corner[np.random.choice(3, size=n, replace=False)]
-        n -= 3
-
         u = np.ravel(sample(n + 2, 1, random))
         # Remove the possible points very close to the corners
         u = u[np.logical_not(np.isclose(u, self.l12 / self.perimeter))]
@@ -493,19 +469,20 @@ class Triangle(Geometry):
                 x.append((l - self.l12) * self.n23 + self.x2)
             else:
                 x.append((l - self.l12 - self.l23) * self.n31 + self.x3)
-        return np.vstack((x_corner, x))
+        return np.vstack(x)
 
 
 class Polygon(Geometry):
     """Simple polygon.
 
     Args:
-        vertices: The order of vertices can be in a clockwise or counterclockwise direction. The vertices will be
-            re-ordered in counterclockwise (right hand rule).
+        vertices: The order of vertices can be in a clockwise or counterclockwise
+            direction. The vertices will be re-ordered in counterclockwise (right hand
+            rule).
     """
 
     def __init__(self, vertices):
-        self.vertices = np.array(vertices)
+        self.vertices = np.array(vertices, dtype=config.real(np))
         if len(vertices) == 3:
             raise ValueError("The polygon is a triangle. Use Triangle instead.")
         if Rectangle.is_valid(self.vertices):
@@ -520,7 +497,7 @@ class Polygon(Geometry):
         self.diagonals = spatial.distance.squareform(
             spatial.distance.pdist(self.vertices)
         )
-        super(Polygon, self).__init__(
+        super().__init__(
             2,
             (np.amin(self.vertices, axis=0), np.amax(self.vertices, axis=0)),
             np.max(self.diagonals),
@@ -598,13 +575,12 @@ class Polygon(Geometry):
         return np.array([0, 0])
 
     def random_points(self, n, random="pseudo"):
-        x = []
+        x = np.empty((0, 2), dtype=config.real(np))
         vbbox = self.bbox[1] - self.bbox[0]
         while len(x) < n:
-            x_new = np.random.rand(1, 2) * vbbox + self.bbox[0]
-            if self.inside(x_new):
-                x.append(x_new)
-        return np.vstack(x)
+            x_new = sample(n, 2, sampler="pseudo") * vbbox + self.bbox[0]
+            x = np.vstack((x, x_new[self.inside(x_new)]))
+        return x[:n]
 
     def uniform_boundary_points(self, n):
         density = n / self.perimeter
@@ -628,12 +604,6 @@ class Polygon(Geometry):
         return x
 
     def random_boundary_points(self, n, random="pseudo"):
-        if n <= self.nvertices:
-            return self.vertices[
-                np.random.choice(len(self.vertices), size=n, replace=False)
-            ]
-        n -= self.nvertices
-
         u = np.ravel(sample(n + self.nvertices, 1, random))
         # Remove the possible points very close to the corners
         l = 0
@@ -655,14 +625,14 @@ class Polygon(Geometry):
                 l0, l1 = l1, l1 + self.diagonals[i, i + 1]
                 v = (self.vertices[i + 1] - self.vertices[i]) / self.diagonals[i, i + 1]
             x.append((l - l0) * v + self.vertices[i])
-        return np.vstack((self.vertices, x))
+        return np.vstack(x)
 
 
 def polygon_signed_area(vertices):
     """The (signed) area of a simple polygon.
 
-    If the vertices are in the counterclockwise direction, then the area is positive; if they are in the clockwise
-    direction, the area is negative.
+    If the vertices are in the counterclockwise direction, then the area is positive; if
+    they are in the clockwise direction, the area is negative.
 
     Shoelace formula: https://en.wikipedia.org/wiki/Shoelace_formula
     """
@@ -687,7 +657,8 @@ def is_left(P0, P1, P2):
         P2: A array of point to be tested.
 
     Returns:
-        >0 if P2 left of the line through P0 and P1, =0 if P2 on the line, <0 if P2 right of the line.
+        >0 if P2 left of the line through P0 and P1, =0 if P2 on the line, <0 if P2
+        right of the line.
     """
     return np.cross(P1 - P0, P2 - P0, axis=-1).reshape((-1, 1))
 
@@ -708,28 +679,29 @@ def is_rectangle(vertices):
 
 
 def is_on_line_segment(P0, P1, P2):
-    """
-    Test if a point is on a line segment.
+    """Test if a point is between two other points on a line segment.
 
     Args:
         P0: One point in the line.
         P1: One point in the line.
         P2: The point to be tested.
+
+    References:
+        https://stackoverflow.com/questions/328107
     """
     v01 = P1 - P0
     v02 = P2 - P0
     v12 = P2 - P1
     return (
-        (
-            # check that P2 is almost on the line P10 P1
-            np.isclose(np.cross(v01, v02) / np.linalg.norm(v01), 0)
-            # check that projection of P2 to line is between P0 and P21
-            and v01 @ v02 >= 0
-            and v01 @ v12 <= 0
-        )
-        or np.isclose(np.linalg.norm(v02), 0)  # check whether P2 is close to P0
-        or np.isclose(np.linalg.norm(v12), 0)  # check whether P2 is close to P1
+        # check that P2 is almost on the line P0 P1
+        np.isclose(np.cross(v01, v02) / np.linalg.norm(v01), 0, atol=1e-6)
+        # check that projection of P2 to line is between P0 and P1
+        and v01 @ v02 >= 0
+        and v01 @ v12 <= 0
     )
+    # Not between P0 and P1, but close to P0 or P1
+    # or np.isclose(np.linalg.norm(v02), 0, atol=1e-6)  # check whether P2 is close to P0
+    # or np.isclose(np.linalg.norm(v12), 0, atol=1e-6)  # check whether P2 is close to P1
 
 
 def is_point_in_path(x: int, y: int, poly) -> bool:
