@@ -114,8 +114,9 @@ data = dde.data.PDE(
 )
 
 from utils.gs_solovev_sol import GS_Linear
-# tokamak = GS_Linear(A=-0.155, eps= 2/6.2, kappa=1.6, delta=0.4)
-ITER = GS_Linear(A=-0.155, eps= 0.32, kappa=1.7, delta=0.33)
+ITER = GS_Linear(eps= 0.32, kappa=1.7, delta=0.33)
+ITER.get_BCs(A=-0.155)
+ITER.solve_coefficients()
 
 LR = 2e-1
 DEPTH = 1
