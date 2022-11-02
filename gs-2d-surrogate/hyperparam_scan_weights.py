@@ -70,9 +70,6 @@ spatial_domain = dde.geometry.Ellipse(eps, kappa, delta)
 n_test = 100
 
 x, u = gen_traindata(1024)
-x_test, u_test = gen_traindata(n_test)
-x_test = np.concatenate((x_test, spatial_domain.random_points(n_test)))
-u_test = np.concatenate((u_test, np.zeros((n_test, 1))))
 bc135 = dde.PointSetBC(x, u)
 ITER = GS_Linear(eps=0.32, kappa=1.7, delta=0.33)
 ITER.get_BCs(A=-0.155)
@@ -89,8 +86,7 @@ for i in range(11):
             [bc135],
             num_domain=1024,
             num_boundary=0,
-            x_test=x_test,
-            y_test=u_test,
+            num_test=n_test,
             train_distribution="LHS"
         )
 
@@ -107,8 +103,6 @@ for i in range(11):
             loss_weights=[1, loss_ratio[i]]
         )
         losshistory, train_state = model.train(epochs=10000, display_every = 100)
-        #dde.saveplot(loss_history, train_state, save_plot=True,issave=True, isplot=True,output_dir=f'./cefron/{CONFIG}/runs/{RUN_NAME}')
-        #plt.figure(1)
         loss_train = np.sum(losshistory.loss_train, axis=1)
         loss_train_domain = [item[0] for item in losshistory.loss_train]
         loss_train_boundary = [item[1] for item in losshistory.loss_train]

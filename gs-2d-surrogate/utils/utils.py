@@ -200,7 +200,7 @@ def evaluate_A(ITER, model, Amax, num_A):
     return x, y, A, psi_pred, psi_true, error
 
 
-def evaluate_parametric(ITER, model, Amax):
+def evaluate_parametric(ITER, model, Amax, num_A=10):
     '''
     ##TODO: Need to break this file and refactor
     evaluate() create a meshgrid and calculate
@@ -214,7 +214,6 @@ def evaluate_parametric(ITER, model, Amax):
         error: relative error betwen psi_tre and psi_pred
     '''
     N = 200
-    num_A = 10
     eps, kappa, delta = ITER.eps, ITER.kappa, ITER.delta
     tau = np.linspace(0, 2 * np.pi, N)
     Arange = np.linspace(-Amax, Amax, num_A)

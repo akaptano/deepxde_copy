@@ -11,9 +11,6 @@ from utils.gs_solovev_sol import GS_Linear
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
-######################
-# ITER Configuration #
-######################
 A = -0.155
 eps = 0.32
 kappa = 1.7
@@ -23,10 +20,8 @@ N1 = - (1 + np.arcsin(delta)) ** 2 / (eps * kappa ** 2)
 N2 = (1 - np.arcsin(delta)) ** 2 / (eps * kappa ** 2)
 N3 = - kappa / (eps * np.cos(np.arcsin(delta)) ** 2)
 
+
 def gen_traindata(num):
-    ######################
-    # ITER Configuration #
-    ######################
     eps = 0.32
     kappa = 1.7
     delta = 0.33
@@ -67,12 +62,9 @@ def boundary_high(x, on_boundary):
 
 spatial_domain = dde.geometry.Ellipse(eps, kappa, delta)
 
-x,u = gen_traindata(1024)
+x, u = gen_traindata(1024)
 
 n_test = 100
-x_test,u_test = gen_traindata(n_test)
-x_test = np.concatenate((x_test, spatial_domain.random_points(n_test)))
-u_test = np.concatenate((u_test, np.zeros((n_test, 1))))
 
 # specify psi, psi_r, psi_z, psi_rr, psi_zz at four locations
 
@@ -87,7 +79,9 @@ observe_x = np.concatenate((x,observe_x))
 observe_y = np.concatenate((u,observe_y))
 
 bc135 = dde.PointSetBC(x,u)
-# ITER = GS_Linear(A=-0.155, eps= 0.32, kappa=1.7, delta=0.33)
+ITER = GS_Linear(eps=0.32, kappa=1.7, delta=0.33)
+ITER.get_BCs(A=A)
+ITER.solve_coefficients()
 sampling_types = ["uniform", "pseudo", "LHS", "Halton", "Hammersley", "Sobol"]
 colors = ['r', 'b', 'g', 'k', 'c', 'm']
 
@@ -98,8 +92,7 @@ for i, sampling in enumerate(sampling_types):
         [bc135],
         num_domain=1024,
         num_boundary=0,
-        x_test=x_test,
-        y_test=u_test,
+        num_test=n_test,
         train_distribution=sampling
     )
 
@@ -115,9 +108,7 @@ for i, sampling in enumerate(sampling_types):
         "L-BFGS-B",
         loss_weights=[1,100]
     )
-    losshistory, train_state = model.train(epochs=1000, display_every = 100)
-    #dde.saveplot(loss_history, train_state, save_plot=True,issave=True, isplot=True,output_dir=f'./cefron/{CONFIG}/runs/{RUN_NAME}')
-    #plt.figure(1)
+    losshistory, train_state = model.train(epochs=1000, display_every=100)
     loss_train = np.sum(losshistory.loss_train, axis=1)
     loss_train_domain = [item[0] for item in losshistory.loss_train]
     loss_train_boundary = [item[1] for item in losshistory.loss_train]
