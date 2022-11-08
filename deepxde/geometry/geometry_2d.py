@@ -1,4 +1,4 @@
-__all__ = ["Disk", "Ellipse", "Ellipse_A", "Polygon", "Rectangle", "Triangle"]
+__all__ = ["Disk", "Ellipse", "Polygon", "Rectangle", "Triangle"]
 
 import numpy as np
 from scipy import spatial
@@ -8,6 +8,7 @@ from .geometry_nd import Hypercube
 from .sampler import sample
 from .. import config
 from ..utils import vectorize
+import tensorflow as tf
 
 
 class Disk(Geometry):
@@ -70,10 +71,10 @@ class Disk(Geometry):
 
 
 class Ellipse(Geometry):
-    def __init__(self, eps, kappa, delta,x_ellipse =[]):
+    def __init__(self, eps, kappa, delta, x_ellipse =[]):
 
         self.DIVERTOR = False
-        self.N = 101
+        self.N = 1001
         self.center, self.eps, self.kappa, self.delta = np.array([[0.0,0.0]]), eps, kappa, delta
         self.tau = np.linspace(0, 2 * np.pi, self.N)
         # Define boundary of ellipse
@@ -97,8 +98,68 @@ class Ellipse(Geometry):
     def inside(self, x):
         return is_point_in_path(x[:, 0:1], x[:, 1:2], self.x_ellipse)
 
+    # @tf.function
     def strictly_inside(self, x):
-        return is_point_in_poly(x[:, 0:1], x[:, 1:2], self.x_ellipse)
+        # x_unpacked = tf.unstack(x)
+        # TensorArr = tf.TensorArray(tf.float32, 1, dynamic_size=True, infer_shape=False)
+        # x_unpacked = TensorArr.unstack(x)
+        # cond = lambda i, *_: i < 1000
+        # x_new = x_unpacked.read(0)
+        # bool_x = is_point_in_poly(x_new[0:1], x_new[1:2], self.x_ellipse)
+        # bool_x = tf.zeros([1000, 1])
+
+        # def body(i, x_unpacked, bool_x):
+        #     # print(i, x_unpacked, bool_x)
+        #     x_new = x_unpacked.read(i)
+        #     bool_new = is_point_in_poly(x_new[0:1], x_new[1:2], self.x_ellipse)
+        #     # bool_x = tf.stack((bool_x, bool_new))
+        #     bool_x.assign()
+        #     print(bool_x)
+        #     return i, x_unpacked, bool_x
+        #
+        # i0 = tf.constant(0)
+        # tf.while_loop(
+        #     cond, body, (i0, x_unpacked, bool_x),
+            # shape_invariants=[i0.get_shape(),
+            #                   tf.shape(x_unpacked),
+            #                   tf.TensorShape([None])]
+        # )
+
+        # bool_x = []
+        # for i in range(10000):
+        bool_x = tf.map_fn(self.is_point_in_poly, x, fn_output_signature=tf.float32)
+        bool_x = tf.expand_dims(bool_x, 1)
+        print(bool_x, bool_x[0])
+        # TensorArr = tf.TensorArray(tf.float32, 1, dynamic_size=True, infer_shape=False)
+        # x_array = TensorArr.unstack(x)
+        # print(x_array)
+        # for x_unpacked in x_array:
+        #     # x_new = x_unpacked[i]
+        #     print(x_unpacked)
+        #     bool_x.append(is_point_in_poly(x_unpacked[0:1], x_unpacked[1:2], self.x_ellipse))
+        return bool_x
+
+    def is_point_in_poly(self, x_full):
+        print("x_full = ", x_full)
+        x = x_full[0:1]
+        y = x_full[1:2]
+        poly = self.x_ellipse
+        num = len(poly)
+        j = num - 1
+        c = False
+        for i in range(num):
+            if (x == poly[i][0]) and (y == poly[i][1]):
+                # point is a corner
+                return 0.0
+            if ((poly[i][1] > y) != (poly[j][1] > y)):
+                slope = (x-poly[i][0])*(poly[j][1]-poly[i][1])-(poly[j][0]-poly[i][0])*(y-poly[i][1])
+                if slope == 0:
+                    # point is on boundary
+                    return 0.0
+                if (slope < 0) != (poly[j][1] < poly[i][1]):
+                    c = not c
+            j = i
+        return float(c)
 
     def on_boundary(self, x):
         # This is not finding the distance of 2d points. Only for 1d does this work.
@@ -110,6 +171,8 @@ class Ellipse(Geometry):
         # Output
         #   True/False
         tol = np.max(np.linalg.norm(self.x_ellipse[:-1] - self.x_ellipse[1:], axis=-1))
+        # print(tol)
+        # tol = 1e-5
         abs_diff = np.abs(x - self.x_ellipse)
 
         if self.DIVERTOR == True:
@@ -144,95 +207,6 @@ class Ellipse(Geometry):
         theta = 2 * np.pi * u
         X = np.hstack((1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta)) ,
                        self.eps * self.kappa * np.sin(theta)))
-        return X
-
-
-class Ellipse_A(Geometry):
-    def __init__(self, eps, kappa, delta, x_ellipse=[], Amax=0.1):
-
-        self.N = 100
-        self.num_A = 10
-        self.center, self.eps, self.kappa, self.delta = np.array(
-            [[0.0, 0.0, 0.0]]), eps, kappa, delta
-        self.tau = np.linspace(0, 2 * np.pi, self.N)
-        Arange = np.linspace(-Amax, Amax, self.num_A)
-
-        R_ellipse = np.outer(1 + self.eps * np.cos(self.tau + np.arcsin(self.delta) * np.sin(self.tau)),
-                             np.ones(self.num_A)
-                             )
-        Z_ellipse = np.outer(self.eps * self.kappa * np.sin(self.tau),
-                             np.ones(self.num_A)
-                             )
-        A_ellipse = np.outer(np.ones(self.N), Arange)
-
-        # Define boundary of elliptical disk
-        self.x_ellipse = np.transpose(np.asarray([R_ellipse, Z_ellipse, A_ellipse]), [1, 2, 0])
-        self.x_ellipse = self.x_ellipse.reshape(self.N * self.num_A, 3)
-
-        # setting xmin and xmax for bbox
-        xmin = np.array([1 - eps, -kappa * eps, -Amax])
-        xmax = np.array([1 + eps, kappa * eps, Amax])
-        self.Amax = Amax
-
-        super(Ellipse_A, self).__init__(3, (xmin,xmax), 1)
-
-    def inside(self, x):
-        return is_point_in_path_A(self.Amax, x[:, 0:1], x[:, 1:2], x[:, 2:3], self.x_ellipse)
-
-    def on_boundary(self, x):
-        # This is not finding the distance of 2d points. Only for 1d does this work.
-        return np.array([self.point_on_boundary(x[i]) for i in range(len(x))])
-
-    def point_on_boundary(self, x):
-        # Input
-        #   x: A point i.e. array([1.0, 0.3])
-        # Output
-        #   True/False
-        tol = np.max(np.linalg.norm(self.x_ellipse[:-1, 0:2] - self.x_ellipse[1:, 0:2], axis=-1))
-        abs_diff = np.abs(x[:, 0:2] - self.x_ellipse[:, 0:2])
-        return np.any(np.sqrt(abs_diff[:, 0:1]**2 + abs_diff[:, 1:2]**2) <= tol)
-
-    def random_points(self, n, random="pseudo"):
-        x = []
-        vbbox = self.bbox[1] - self.bbox[0]
-        while len(x) < n:
-            x_new = np.random.rand(1, 3) * vbbox + self.bbox[0]
-            if self.inside(x_new):
-                x.append(x_new)
-        return np.vstack(x)
-
-    def uniform_boundary_points(self, n):
-        theta = np.linspace(0, 2 * np.pi, n)
-        Arange = np.linspace(-self.Amax, self.Amax, n)
-        R_ellipse = np.outer(1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta)),
-                             np.ones(n)
-                             )
-        Z_ellipse = np.outer(self.eps * self.kappa * np.sin(theta),
-                             np.ones(n)
-                             )
-        A_ellipse = np.outer(np.ones(n), Arange)
-        X = np.transpose(
-            np.asarray([R_ellipse, Z_ellipse, A_ellipse]),
-            [1, 2, 0]).reshape(n ** 2, 3
-                               )
-        return X
-
-    def random_boundary_points(self, n, random="pseudo"):
-        u = sample(n, 1, random)
-        theta = 2 * np.pi * u
-        Arange = (sample(n, 1, random) - 0.5) * 2 * self.Amax
-        R_ellipse = np.outer(1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta)),
-                             np.ones(n)
-                             )
-        Z_ellipse = np.outer(self.eps * self.kappa * np.sin(theta),
-                             np.ones(n)
-                             )
-        A_ellipse = np.outer(np.ones(n), Arange)
-        # X = np.hstack((R_ellipse, Z_ellipse, A_ellipse))
-        X = np.transpose(
-            np.asarray([R_ellipse, Z_ellipse, A_ellipse]),
-            [1, 2, 0]).reshape(n ** 2, 3
-                               )
         return X
 
 
@@ -730,31 +704,3 @@ def is_point_in_path(x: int, y: int, poly) -> bool:
                 c = not c
         j = i
     return c
-
-
-def is_point_in_poly(x: int, y: int, poly) -> int:
-    # Determine if the point is in the polygon.
-    #
-    # Args:
-    #   x -- The x coordinates of point.
-    #   y -- The y coordinates of point.
-    #   poly -- a list of tuples [(x, y), (x, y), ...]
-    #
-    # Returns:
-    #   True if the point is in the path NOT if on a corner or on the boundary
-    num = len(poly)
-    j = num - 1
-    c = False
-    for i in range(num):
-        if (x == poly[i][0]) and (y == poly[i][1]):
-            # point is a corner
-            return 0.0
-        if ((poly[i][1] > y) != (poly[j][1] > y)):
-            slope = (x-poly[i][0])*(poly[j][1]-poly[i][1])-(poly[j][0]-poly[i][0])*(y-poly[i][1])
-            if slope == 0:
-                # point is on boundary
-                return 0.0
-            if (slope < 0) != (poly[j][1] < poly[i][1]):
-                c = not c
-        j = i
-    return float(c)
