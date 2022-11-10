@@ -172,7 +172,7 @@ class Ellipse(Geometry):
         #   True/False
         tol = np.max(np.linalg.norm(self.x_ellipse[:-1] - self.x_ellipse[1:], axis=-1))
         # print(tol)
-        # tol = 1e-5
+        tol = 1e-5
         abs_diff = np.abs(x - self.x_ellipse)
 
         if self.DIVERTOR == True:

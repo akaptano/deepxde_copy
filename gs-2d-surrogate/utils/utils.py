@@ -103,6 +103,15 @@ def evaluate(ITER, model):
             np.ravel(x),
             np.ravel(y),
         )).T
+        # Need this if using hard boundary conditions since we can
+        # only use points strictly in the domain!
+        # x_inside = []
+        # y_inside = []
+        # X_inside = []
+        # for i in range(X.shape[0]):
+        #     if model.data.geom.inside(X[i:i+1, :]):
+        #         X_inside.append(X[i, :])
+        # X = np.array(X_inside)
         X_bc = np.vstack(
              (np.ravel(x_ellipse[:, 0]),
               np.ravel(x_ellipse[:, 1]),
@@ -151,8 +160,8 @@ def evaluate(ITER, model):
     psi_pred_lin = psi_pred_lin.reshape(-1)
     psi_pred = np.copy(np.reshape(psi_pred_lin, [nx, ny]))
 
-    e_max = max((output_bc_pred - np.array(output_bc_true)) ** 2 / min(output_bc_pred) ** 2)
-    e = (psi_pred_lin - np.array(psi_true_lin)) ** 2 / min(psi_pred_lin) ** 2
+    e_max = max((output_bc_pred - np.array(output_bc_true)) ** 2 / min(output_bc_true) ** 2)
+    e = (psi_pred_lin - np.array(psi_true_lin)) ** 2 / min(psi_true_lin) ** 2
     error = np.reshape(e, [nx, ny])
     error[error > e_max] = e_max
     return x, y, psi_pred, psi_true, error
@@ -165,6 +174,9 @@ def plot_summary_figure(ITER, model, X_test, PATH):
     """
 
     x, y, psi_pred, psi_true, error = evaluate(ITER, model)
+    print(error)
+    psi_pred = np.nan_to_num(psi_pred)
+    error = np.nan_to_num(error)
     x_eq, psi_true_eq, psi_pred_eq, e_eq = evaluate_eq(ITER, model)
     zoom = ((1 + ITER.eps) - (1 - ITER.eps)) * 0.05
     innerPoint = 1 - ITER.eps - zoom
@@ -209,6 +221,7 @@ def plot_summary_figure(ITER, model, X_test, PATH):
     plt.ticklabel_format(axis='both', style='sci', scilimits=(0, 0))
 
     # Plot 4 - Relative Error
+    print(error)
     fig, ax4 = relative_error_plot(
         fig, ax4, x, y, error, model, ITER,
     )
@@ -392,7 +405,12 @@ def relative_error_plot(
 
     # levels = np.logspace(np.log(np.min(error) + 1e-10), np.log(np.max(error)), nlevels + 1)
     # levels = np.linspace(0.0, np.max(error), nlevels + 1)
-    cp = ax.contourf(x, y, error + 1e-10, levels=nlevels, norm=LogNorm(), cmap=cmap)
+    error[error > error.max()/1000.0] = error.max()/1000.0
+
+    cp = ax.contourf(
+        x, y, error + 1e-10, # levels=nlevels,
+        norm=LogNorm(vmin=1e-10, vmax=1e-2), cmap='magma'
+    )
     #cp = ax.contourf(x, y, error, norm=LogNorm(vmin=1e-10), cmap=cmap)
     # cp = ax.contourf(x, y, error, cmap=cmap)
 
@@ -411,7 +429,13 @@ def relative_error_plot(
         s=2,
         c="#D12F24"
     )
+
+    # from matplotlib import ticker
+
     cb = fig.colorbar(cp, ax=ax)  # Add a colorbar to a plot
+    # tick_locator = ticker.MaxNLocator(nbins=20)
+    # cb.locator = tick_locator
+    # cb.update_ticks()
     # cb.formatter.set_powerlimits((0, 0))
     # cb.ax.yaxis.set_offset_position('right')
     # cb.update_ticks()

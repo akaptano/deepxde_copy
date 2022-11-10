@@ -29,8 +29,13 @@ def main():
     initializer = "Glorot uniform"
     net = dde.maps.FNN(layer_size, activation, initializer)
 
+    def output_transform(x, y):
+        return (1 + x) * (1 - x) * y
+
+    net.apply_output_transform(output_transform)
+
     model = dde.Model(data, net)
-    model.compile("adam", lr=0.001, metrics=["l2 relative error"])
+    model.compile("adam", lr=0.001, metrics=["l2 relative error"], loss_weights=[1, 1])
 
     checkpointer = dde.callbacks.ModelCheckpoint(
         "model/model.ckpt", verbose=1, save_better_only=True
