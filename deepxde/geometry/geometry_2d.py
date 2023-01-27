@@ -196,6 +196,15 @@ class Ellipse(Geometry):
                 x.append(x_new)
         return np.vstack(x)
 
+    def uniform_points(self, n, boundary=True):
+        if boundary:
+            theta = np.linspace(0, 2 * np.pi, n)
+            X = np.hstack((1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta)) ,
+                           self.eps * self.kappa * np.sin(theta)))
+            return X
+        else:
+            return self.random_points(n)
+
     def uniform_boundary_points(self, n):
         theta = np.linspace(0, 2 * np.pi, n)
         X = np.hstack((1 + self.eps * np.cos(theta + np.arcsin(self.delta) * np.sin(theta)) ,
