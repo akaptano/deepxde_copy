@@ -166,15 +166,76 @@ def evaluate(ITER, model):
     error[error > e_max] = e_max
     return x, y, psi_pred, psi_true, error
 
+def plot_summary_figure(ITER, model, X_test, losshistory, loss_ratio, PATH):
+    """
+        Make summary plots of the solution and normalized errors.
+        Here we only have three plots for simplicity.
+    """
 
-def plot_summary_figure(ITER, model, X_test, PATH):
+
+    x, y, psi_pred, psi_true, error = evaluate(ITER, model)
+    # print(error)
+    psi_pred = np.nan_to_num(psi_pred)
+    error = np.nan_to_num(error)
+    x_eq, psi_true_eq, psi_pred_eq, e_eq = evaluate_eq(ITER, model)
+    zoom = ((1 + ITER.eps) - (1 - ITER.eps)) * 0.05
+    innerPoint = 1 - ITER.eps - zoom
+    outerPoint = 1 + ITER.eps + zoom
+    lowPoint = -ITER.kappa * ITER.eps - zoom
+    highPoint = ITER.kappa * ITER.eps + zoom
+
+    # Plotting Setup
+    print(psi_pred.shape)
+
+    fig,axs=plt.subplots(1,3,figsize=(20,5),width_ratios=[1, 1,2])
+    ax1,ax2,ax3 = axs[0],axs[1],axs[2]
+    levels = np.linspace(min(psi_true.reshape(-1)),0,8)
+
+    # Plot 1 - Analytic vs. PINN Solution
+    cp = ax1.contour(x, y, psi_true,levels=levels,label="Analytical")
+    cp = ax1.contour(x, y, psi_pred,levels=levels, label="PINN",linestyles='dashdot',linewidths=3)
+
+    # ax1.scatter(observe_x[:,0], observe_x[:,1], s = 2,c="black")
+    fig.colorbar(cp,ax=ax1).formatter.set_powerlimits((0, 0))
+    ax1.set_title('Analytical VS. PINN')
+    ax1.set_xlabel(r'$R/R_{0}$')
+    ax1.set_ylabel(r'$Z/R_{0}$')
+    ax1.axis(xmin=innerPoint,xmax=outerPoint,ymin=lowPoint, ymax=highPoint)
+    ax1.grid(True, zorder=0)
+    ax1.legend()
+    ax1.set_axisbelow(True)
+
+    # Plot 2 - Relative Error
+    fig, ax2 = relative_error_plot(fig,ax2,x,y,error,model,ITER,X_test)
+    # ax2.set_title(r'$($\psi$_{n}-u^{*})^2/u_{a}^2$')
+    ax2.set_title(r'($\psi_{a}-\psi^{*})^2/\psi_{a}^2$')
+    ax2.set_xlabel(r'$R/R_{0}$')
+    ax2.axis(xmin=innerPoint,xmax=outerPoint,ymin=lowPoint, ymax=highPoint)
+    ax2.grid(True, zorder=0)
+    ax2.set_axisbelow(True)
+
+    # Plot 3 - Loss Function
+    loss_train_domain = [item[0] for item in losshistory.loss_train]
+    loss_train_boundary = [item[1] for item in losshistory.loss_train]
+    loss_test = [item[0] for item in losshistory.loss_test]
+    ax3.semilogy(losshistory.steps, loss_train_domain, color='r', label="{0:.1e} domain train loss".format(loss_ratio))
+    ax3.semilogy(losshistory.steps, [x / loss_ratio for x in loss_train_boundary], color='b', linestyle='--', label="{0:.1e} boundary train loss".format(loss_ratio))
+    ax3.semilogy(losshistory.steps, loss_test, label="Test loss",color='g', linestyle='dotted',linewidth=3)
+    ax3.set_title('Loss Function')
+    ax3.set_xlabel(r'Loss')
+    ax3.set_ylabel(r'Epoch')
+    ax3.legend()
+    ax3.grid(True, zorder=0)
+
+
+def plot_summary_figure_kaltsas(ITER, model, X_test, PATH):
     """
         Make summary plots of the solution and normalized errors, as in
         the Kaltsas 2021 pinns for MHD paper.
     """
 
     x, y, psi_pred, psi_true, error = evaluate(ITER, model)
-    print(error)
+    # print(error)
     psi_pred = np.nan_to_num(psi_pred)
     error = np.nan_to_num(error)
     x_eq, psi_true_eq, psi_pred_eq, e_eq = evaluate_eq(ITER, model)
@@ -221,9 +282,9 @@ def plot_summary_figure(ITER, model, X_test, PATH):
     plt.ticklabel_format(axis='both', style='sci', scilimits=(0, 0))
 
     # Plot 4 - Relative Error
-    print(error)
+    # print(error)
     fig, ax4 = relative_error_plot(
-        fig, ax4, x, y, error, model, ITER,
+        fig, ax4, x, y, error, model, ITER, X_test
     )
     # ax4.set_title(r'$($\psi$_{n}-u^{*})^2/u_{a}^2$')
     ax4.set_title(r'($\psi_{a}-\psi^{*})^2/\psi_{a}^2$')
@@ -367,7 +428,7 @@ def compute_params(x, y, psi_true, psi_pred):
 
 
 def relative_error_plot(
-    fig, ax, x, y, error, model, ITER, DIVERTOR=False,
+    fig, ax, x, y, error, model, ITER, X_test, DIVERTOR=False,
 ):
     """
         Make summary plot of the solution and normalized errors, as in
@@ -391,17 +452,17 @@ def relative_error_plot(
     cmap = plt.cm.get_cmap("magma", nlevels + 1)
 
     # Calculate corresponding psi
-    # if len(X_test) != 0:
-    #     psi_test = []
-    #     for point in X_test:
-    #         psi_test.append(ITER.psi_func(point[0], point[1]))
-    #     psi_true_test = np.reshape(psi_test, [len(psi_test), 1])
-    #     output_test = model.predict(X_test)
-    #     psi_pred_test = output_test[:, 0].reshape(-1)
-    #     psi_pred_test = np.reshape(psi_pred_test, [len(psi_pred_test), 1])
-    #     e = (psi_true_test - psi_pred_test) ** 2 / min(psi_true_test) ** 2
-    #     print('Average normalized percent error = ', np.mean(np.sqrt(e)) * 100)
-    #     print('Max normalized percent error = ', np.max(np.sqrt(e)) * 100)
+    if len(X_test) != 0:
+        psi_test = []
+        for point in X_test:
+            psi_test.append(ITER.psi_func(point[0], point[1]))
+        psi_true_test = np.reshape(psi_test, [len(psi_test), 1])
+        output_test = model.predict(X_test)
+        psi_pred_test = output_test[:, 0].reshape(-1)
+        psi_pred_test = np.reshape(psi_pred_test, [len(psi_pred_test), 1])
+        e = (psi_true_test - psi_pred_test) ** 2 / min(psi_true_test) ** 2
+        print('Average normalized percent error = ', np.mean(np.sqrt(e)) * 100)
+        print('Max normalized percent error = ', np.max(np.sqrt(e)) * 100)
 
     # levels = np.logspace(np.log(np.min(error) + 1e-10), np.log(np.max(error)), nlevels + 1)
     # levels = np.linspace(0.0, np.max(error), nlevels + 1)
