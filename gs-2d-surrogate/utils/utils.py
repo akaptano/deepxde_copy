@@ -82,8 +82,8 @@ def evaluate(ITER, model):
     x_ellipse = np.asarray([R_ellipse, Z_ellipse]).T
 
     # make mesh
-    nx = 51
-    ny = 51
+    nx = 501
+    ny = 501
     zoom = 0.2
     inner_point = (1 - 1.1 * eps * (1 + zoom))
     outer_point = (1 + 1.1 * eps * (1 + zoom))
@@ -166,7 +166,7 @@ def evaluate(ITER, model):
     error[error > e_max] = e_max
     return x, y, psi_pred, psi_true, error
 
-def plot_summary_figure(ITER, model, X_test, losshistory, loss_ratio, PATH):
+def plot_summary_figure(ITER, model, X_test, losshistory, loss_ratio, PATH, engineering_param=False):
     """
         Make summary plots of the solution and normalized errors.
         Here we only have three plots for simplicity.
@@ -217,15 +217,24 @@ def plot_summary_figure(ITER, model, X_test, losshistory, loss_ratio, PATH):
     # Plot 3 - Loss Function
     loss_train_domain = [item[0] for item in losshistory.loss_train]
     loss_train_boundary = [item[1] for item in losshistory.loss_train]
-    loss_test = [item[0] for item in losshistory.loss_test]
+    loss_test_domain = [item[0] for item in losshistory.loss_test]
+    loss_test_boundary = [item[1] for item in losshistory.loss_test]
+
     ax3.semilogy(losshistory.steps, loss_train_domain, color='r', label="{0:.1e} domain train loss".format(loss_ratio))
-    ax3.semilogy(losshistory.steps, [x / loss_ratio for x in loss_train_boundary], color='b', linestyle='--', label="{0:.1e} boundary train loss".format(loss_ratio))
-    ax3.semilogy(losshistory.steps, loss_test, label="Test loss",color='g', linestyle='dotted',linewidth=3)
+    ax3.semilogy(losshistory.steps, [x / loss_ratio for x in loss_train_boundary], color='r', linestyle='--', label="{0:.1e} boundary train loss".format(loss_ratio))
+    ax3.semilogy(losshistory.steps, loss_test_domain, label="{0:.1e} domain train loss".format(loss_ratio),color='g', linestyle='dotted',linewidth=3)
+    ax3.semilogy(losshistory.steps, [x / loss_ratio for x in loss_test_boundary], color='g', linestyle='dotted', label="{0:.1e} boundary test loss".format(loss_ratio))
+
     ax3.set_title('Loss Function')
     ax3.set_xlabel(r'Loss')
     ax3.set_ylabel(r'Epoch')
     ax3.legend()
     ax3.grid(True, zorder=0)
+    plt.savefig(PATH + 'analysis.jpg', dpi=300)
+
+    if engineering_param:
+        engineering_params = compute_params(x, y, psi_true, psi_pred)
+        return engineering_params 
 
 
 def plot_summary_figure_kaltsas(ITER, model, X_test, PATH):
@@ -444,8 +453,8 @@ def relative_error_plot(
          eps * kappa * np.sin(tau)]
     ).T[::-1]
 
-    if DIVERTOR:
-        x_ellipse = v
+    # if DIVERTOR:
+    #     x_ellipse = v
     X_bc = np.vstack((np.ravel(x_ellipse[:, 0]), np.ravel(x_ellipse[:, 1]))).T
 
     nlevels = 1000
