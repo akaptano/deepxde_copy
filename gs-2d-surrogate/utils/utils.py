@@ -2,7 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.colors import LogNorm
+from matplotlib.ticker import ScalarFormatter
+from matplotlib import ticker
 
+class ScalarFormatterForceFormat(ScalarFormatter):
+    def _set_format(self):  # Override function that finds format to use.
+        self.format = "%1.1f"  # Give format here
 
 def evaluate_eq(ITER, model):
     """
@@ -171,7 +176,9 @@ def plot_summary_figure(ITER, model, X_test, losshistory, loss_ratio, PATH, engi
         Make summary plots of the solution and normalized errors.
         Here we only have three plots for simplicity.
     """
-
+    LABEL_SIZE = 23
+    SMALL_LABEL = 17
+    SMALLEST_LABEL = 15
 
     x, y, psi_pred, psi_true, error = evaluate(ITER, model)
     # print(error)
@@ -187,30 +194,36 @@ def plot_summary_figure(ITER, model, X_test, losshistory, loss_ratio, PATH, engi
     # Plotting Setup
     print(psi_pred.shape)
 
-    fig,axs=plt.subplots(1,3,figsize=(20,5),width_ratios=[1, 1,2])
+    fig,axs=plt.subplots(1,3,figsize=(20,5),width_ratios=[1, 1,2], layout="constrained")
     ax1,ax2,ax3 = axs[0],axs[1],axs[2]
     levels = np.linspace(min(psi_true.reshape(-1)),0,8)
 
     # Plot 1 - Analytic vs. PINN Solution
-    cp = ax1.contour(x, y, psi_true,levels=levels,label="Analytical")
-    cp = ax1.contour(x, y, psi_pred,levels=levels, label="PINN",linestyles='dashdot',linewidths=3)
+    cp = ax1.contour(x, y, psi_true,levels=levels)
+    cp = ax1.contour(x, y, psi_pred,levels=levels,linestyles='dashdot',linewidths=3)
 
-    # ax1.scatter(observe_x[:,0], observe_x[:,1], s = 2,c="black")
-    fig.colorbar(cp,ax=ax1).formatter.set_powerlimits((0, 0))
-    ax1.set_title('Analytical VS. PINN')
-    ax1.set_xlabel(r'$R/R_{0}$')
-    ax1.set_ylabel(r'$Z/R_{0}$')
+    fmt = ScalarFormatterForceFormat(useMathText=False)
+    fmt.set_powerlimits((0, 0))
+    cb = fig.colorbar(cp,ax=ax1,format=fmt)
+    # cb.ax.yaxis.set_major_formatter(fmt)
+    cb.ax.tick_params(labelsize=SMALL_LABEL)
+    cb.ax.yaxis.get_offset_text().set_fontsize(SMALLEST_LABEL)
+    ax1.set_title('Analytical VS. PINN', fontsize = SMALL_LABEL)
+    ax1.set_xlabel(r'$R/R_{0}$', fontsize = SMALL_LABEL)
+    ax1.set_ylabel(r'$Z/R_{0}$', fontsize = SMALL_LABEL)
     ax1.axis(xmin=innerPoint,xmax=outerPoint,ymin=lowPoint, ymax=highPoint)
+    ax1.tick_params(labelsize=SMALL_LABEL)
     ax1.grid(True, zorder=0)
-    ax1.legend()
+    # ax1.legend()
     ax1.set_axisbelow(True)
 
     # Plot 2 - Relative Error
     fig, ax2 = relative_error_plot(fig,ax2,x,y,error,model,ITER,X_test)
     # ax2.set_title(r'$($\psi$_{n}-u^{*})^2/u_{a}^2$')
-    ax2.set_title(r'($\psi_{a}-\psi^{*})^2/\psi_{a}^2$')
-    ax2.set_xlabel(r'$R/R_{0}$')
+    ax2.set_title(r'($\psi_{a}-\psi^{*})^2/\psi_{a}^2$',fontsize = SMALL_LABEL)
+    ax2.set_xlabel(r'$R/R_{0}$',fontsize = SMALL_LABEL)
     ax2.axis(xmin=innerPoint,xmax=outerPoint,ymin=lowPoint, ymax=highPoint)
+    ax2.tick_params(labelsize=SMALL_LABEL)
     ax2.grid(True, zorder=0)
     ax2.set_axisbelow(True)
 
@@ -225,10 +238,11 @@ def plot_summary_figure(ITER, model, X_test, losshistory, loss_ratio, PATH, engi
     ax3.semilogy(losshistory.steps, loss_test_domain, label="{0:.1e} domain train loss".format(loss_ratio),color='g', linestyle='dotted',linewidth=3)
     ax3.semilogy(losshistory.steps, [x / loss_ratio for x in loss_test_boundary], color='g', linestyle='dotted', label="{0:.1e} boundary test loss".format(loss_ratio))
 
-    ax3.set_title('Loss Function')
-    ax3.set_xlabel(r'Loss')
-    ax3.set_ylabel(r'Epoch')
-    ax3.legend()
+    ax3.set_title('Loss Function', fontsize= SMALL_LABEL)
+    ax3.set_xlabel(r'Loss', fontsize = SMALL_LABEL)
+    ax3.set_ylabel(r'Epoch', fontsize = SMALL_LABEL)
+    ax3.tick_params(labelsize=SMALL_LABEL)
+    ax3.legend(fontsize = SMALLEST_LABEL,loc='lower right')
     ax3.grid(True, zorder=0)
     plt.savefig(PATH + 'analysis.jpg', dpi=300)
 
@@ -318,16 +332,27 @@ def compute_params(x, y, psi_true, psi_pred):
     engineering_params = {
         "true_volume": 0.0,
         "pred_volume": 0.0,
+        "rel_error_volume": 0.0,
+
         "true_Cp": 0.0,
         "pred_Cp": 0.0,
+        "rel_error_Cp": 0.0,
+
         "true_qstar": 0.0,
         "pred_qstar": 0.0,
+        "rel_error_qstar": 0.0,
+
         "true_beta_p": 0.0,
         "pred_beta_p": 0.0,
+        "rel_error_beta_p": 0.0,
+
         "true_beta_t": 0.0,
         "pred_beta_t": 0.0,
+        "rel_error_beta_t": 0.0,
+
         "true_beta": 0.0,
         "pred_beta": 0.0,
+        "rel_error_beta": 0.0,
     }
 
     # Compute a contour integral
@@ -433,6 +458,22 @@ def compute_params(x, y, psi_true, psi_pred):
     engineering_params["pred_beta_p"] = beta_p
     engineering_params["pred_beta_t"] = epsilon ** 2 * beta_p / qstar ** 2
     engineering_params["pred_beta"] = epsilon ** 2 * beta_p / (qstar ** 2 + epsilon ** 2)
+
+    engineering_params["rel_error_volume"] = (engineering_params["true_volume"] - engineering_params["pred_volume"])/engineering_params["true_volume"]
+    engineering_params["rel_error_Cp"] = (engineering_params["true_Cp"] - engineering_params["pred_Cp"])/engineering_params["true_Cp"]
+    engineering_params["rel_error_qstar"] = (engineering_params["true_qstar"] - engineering_params["pred_qstar"])/engineering_params["true_qstar"]
+    engineering_params["rel_error_beta_p"] = (engineering_params["true_beta_p"] - engineering_params["pred_beta_p"])/engineering_params["true_beta_p"]
+    engineering_params["rel_error_beta_t"] = (engineering_params["true_beta_t"] - engineering_params["pred_beta_t"])/engineering_params["true_beta_t"]
+    engineering_params["rel_error_beta"] = (engineering_params["true_beta"] - engineering_params["pred_beta"])/engineering_params["true_beta"]
+
+    # Relative Error
+    print('Relative Error volume = ', engineering_params["rel_error_volume"])
+    print('Relative Error Cp = ',engineering_params["rel_error_Cp"])
+    print('Relative Error qstar = ', engineering_params["rel_error_qstar"])
+    print('Relative Error beta_p = ', engineering_params["rel_error_beta_p"])
+    print('Relative Error beta_t = ',engineering_params["rel_error_beta_t"])
+    print('Relative Error beta = ', engineering_params["rel_error_beta"])
+
     return engineering_params
 
 
@@ -443,6 +484,8 @@ def relative_error_plot(
         Make summary plot of the solution and normalized errors, as in
         the Kaltsas 2021 pinns for MHD paper.
     """
+
+    SMALL_LABEL = 17
 
     N = 1001
     eps, kappa, delta = ITER.eps, ITER.kappa, ITER.delta
@@ -503,6 +546,8 @@ def relative_error_plot(
     # from matplotlib import ticker
 
     cb = fig.colorbar(cp, ax=ax)  # Add a colorbar to a plot
+    cb.ax.tick_params(labelsize=SMALL_LABEL)
+    cb.ax.yaxis.get_offset_text().set_fontsize(SMALL_LABEL)
     # tick_locator = ticker.MaxNLocator(nbins=20)
     # cb.locator = tick_locator
     # cb.update_ticks()
