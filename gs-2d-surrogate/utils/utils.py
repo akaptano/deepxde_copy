@@ -9,6 +9,11 @@ class ScalarFormatterForceFormat(ScalarFormatter):
     def _set_format(self):  # Override function that finds format to use.
         self.format = "%1.1f"  # Give format here
 
+def forceAspect(ax,aspect=1):
+    im = ax.get_images()
+    extent =  im[0].get_extent()
+    ax.set_aspect(abs((extent[1]-extent[0])/(extent[3]-extent[2]))/aspect)
+
 def evaluate_eq(ITER, model):
     """
         Evaluate PINN solution error at the Z=0 midplane.
@@ -194,7 +199,7 @@ def plot_summary_figure(ITER, model, X_test, losshistory, loss_ratio, PATH, engi
     # Plotting Setup
     print(psi_pred.shape)
 
-    fig,axs=plt.subplots(1,3,figsize=(20,5),width_ratios=[1, 1,2], layout="constrained")
+    fig,axs=plt.subplots(1,3,figsize=(20,6),width_ratios=[1, 1,2],layout="constrained")
     ax1,ax2,ax3 = axs[0],axs[1],axs[2]
     levels = np.linspace(min(psi_true.reshape(-1)),0,8)
 
@@ -214,8 +219,10 @@ def plot_summary_figure(ITER, model, X_test, losshistory, loss_ratio, PATH, engi
     ax1.axis(xmin=innerPoint,xmax=outerPoint,ymin=lowPoint, ymax=highPoint)
     ax1.tick_params(labelsize=SMALL_LABEL)
     ax1.grid(True, zorder=0)
+    ax1.set_aspect(1)
     # ax1.legend()
     ax1.set_axisbelow(True)
+
 
     # Plot 2 - Relative Error
     fig, ax2 = relative_error_plot(fig,ax2,x,y,error,model,ITER,X_test)
@@ -225,6 +232,7 @@ def plot_summary_figure(ITER, model, X_test, losshistory, loss_ratio, PATH, engi
     ax2.axis(xmin=innerPoint,xmax=outerPoint,ymin=lowPoint, ymax=highPoint)
     ax2.tick_params(labelsize=SMALL_LABEL)
     ax2.grid(True, zorder=0)
+    ax2.set_aspect(1)
     ax2.set_axisbelow(True)
 
     # Plot 3 - Loss Function
@@ -242,8 +250,9 @@ def plot_summary_figure(ITER, model, X_test, losshistory, loss_ratio, PATH, engi
     ax3.set_xlabel(r'Loss', fontsize = SMALL_LABEL)
     ax3.set_ylabel(r'Epoch', fontsize = SMALL_LABEL)
     ax3.tick_params(labelsize=SMALL_LABEL)
-    ax3.legend(fontsize = SMALLEST_LABEL,loc='lower right')
+    ax3.legend(fontsize = SMALL_LABEL,loc='upper right')
     ax3.grid(True, zorder=0)
+    
     plt.savefig(PATH + 'analysis.jpg', dpi=300)
 
     if engineering_param:
