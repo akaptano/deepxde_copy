@@ -1,10 +1,9 @@
 #!/bin/bash
-#SBATCH --qos=debug
+#SBATCH --output=fast.out
+#SBATCH --error=fast.err
 #SBATCH --nodes=1
-#SBATCH --time=00:10:00
-#SBATCH --constraint gpu 
-#SBATCH --gpus 2
-#SBATCH --account=mp217_g
+#SBATCH --time=01:00:00
+#SBATCH --gres=gpu:1
 
 module load PrgEnv-gnu cpe-cuda cuda python
 export PYTHONPATH=$PYTHONPATH:/global/homes/a/akaptano/deepxde_copy/

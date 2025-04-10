@@ -8,6 +8,8 @@ import deepxde as dde
 import os
 from deepxde.backend import tf
 
+from deepxde.config import set_default_float
+set_default_float("float64")
 #os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 #os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
@@ -65,7 +67,8 @@ def boundary_inner(x, on_boundary):
 def boundary_high(x, on_boundary):
     return on_boundary and np.isclose([x[0], x[1]], [1 - delta * eps, kappa * eps]).all()
 
-spatial_domain = dde.geometry.Ellipse(eps, kappa, delta) 
+spatial_domain = dde.geometry.Ellipse(np.real([0.0,0.0]), eps, kappa, delta) 
+# spatial_domain = dde.geometry.Ellipse(eps, kappa, delta) 
 
 x,u = gen_traindata(8)
 

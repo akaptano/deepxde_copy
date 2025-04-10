@@ -178,6 +178,8 @@ def saveplot(
         plot_loss_history(loss_history)
         plot_best_state(train_state)
         plt.show()
+        plt.savefig(os.path.join(output_dir, "loss_history.pdf"))
+        plt.close()
 
 
 def plot_loss_history(loss_history, fname=None):

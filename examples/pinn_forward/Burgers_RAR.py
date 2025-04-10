@@ -4,7 +4,8 @@ import numpy as np
 
 
 def gen_testdata():
-    data = np.load("../dataset/Burgers.npz")
+    data = np.load("./examples/dataset/Burgers.npz")
+    # data = np.load("../dataset/Burgers.npz")
     t, x, exact = data["t"], data["x"], data["usol"].T
     xx, tt = np.meshgrid(x, t)
     X = np.vstack((np.ravel(xx), np.ravel(tt))).T
