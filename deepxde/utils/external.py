@@ -141,6 +141,7 @@ def saveplot(
     train_fname="train.dat",
     test_fname="test.dat",
     output_dir=None,
+    output_fname="loss_history",
 ):
     """Save/plot the loss history and best trained result.
 
@@ -160,6 +161,7 @@ def saveplot(
         train_fname (string): Name of the file to save the training points in.
         test_fname (string): Name of the file to save the testing points in.
         output_dir (string): If ``None``, use the current working directory.
+        output_fname (string): Name of the file to save the loss history in.
     """
     if output_dir is None:
         output_dir = os.getcwd()
@@ -178,7 +180,7 @@ def saveplot(
         plot_loss_history(loss_history)
         plot_best_state(train_state)
         plt.show()
-        plt.savefig(os.path.join(output_dir, "loss_history.pdf"))
+        plt.savefig(os.path.join(output_dir, output_fname + ".pdf"))
         plt.close()
 
 
