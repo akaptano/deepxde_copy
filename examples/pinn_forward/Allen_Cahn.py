@@ -1,4 +1,4 @@
-"""Backend supported: tensorflow.compat.v1, tensorflow, pytorch
+"""Backend supported: tensorflow.compat.v1, tensorflow, pytorch, paddle
 
 Implementation of Allen-Cahn equation example in paper https://arxiv.org/abs/2111.02801.
 """
@@ -9,6 +9,8 @@ from scipy.io import loadmat
 from deepxde.backend import tf
 # Import torch if using backend pytorch
 # import torch
+# Import paddle if using backend paddle
+# import paddle
 
 
 def gen_testdata():
@@ -43,13 +45,17 @@ def output_transform(x, y):
 # def output_transform(x, y):
 #     return x[:, 0:1]**2 * torch.cos(np.pi * x[:, 0:1]) + x[:, 1:2] * (1 - x[:, 0:1]**2) * y
 
+# Backend paddle
+# def output_transform(x, y):
+#     return x[:, 0:1]**2 * paddle.cos(np.pi * x[:, 0:1]) + x[:, 1:2] * (1 - x[:, 0:1]**2) * y
+
 data = dde.data.TimePDE(geomtime, pde, [], num_domain=8000, num_boundary=400, num_initial=800)
 net = dde.nn.FNN([2] + [20] * 3 + [1], "tanh", "Glorot normal")
 net.apply_output_transform(output_transform)
 model = dde.Model(data, net)
 
 model.compile("adam", lr=1e-3)
-model.train(epochs=40000)
+model.train(iterations=40000)
 model.compile("L-BFGS")
 losshistory, train_state = model.train()
 dde.saveplot(losshistory, train_state, issave=True, isplot=True)

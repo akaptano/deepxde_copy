@@ -1,4 +1,4 @@
-"""Backend supported: tensorflow.compat.v1
+"""Backend supported: tensorflow.compat.v1, paddle
 
 Implementation of the wave propagation example in paper https://arxiv.org/abs/2012.10047.
 References:
@@ -21,7 +21,7 @@ def get_initial_loss(model):
 def pde(x, y):
     dy_tt = dde.grad.hessian(y, x, i=1, j=1)
     dy_xx = dde.grad.hessian(y, x, i=0, j=0)
-    return dy_tt - C ** 2 * dy_xx
+    return dy_tt - C**2 * dy_xx
 
 
 def func(x):
@@ -41,7 +41,7 @@ ic_1 = dde.icbc.IC(geomtime, func, lambda _, on_initial: on_initial)
 ic_2 = dde.icbc.OperatorBC(
     geomtime,
     lambda x, y, _: dde.grad.jacobian(y, x, i=0, j=1),
-    lambda x, _: np.isclose(x[1], 0),
+    lambda x, _: dde.utils.isclose(x[1], 0),
 )
 data = dde.data.TimePDE(
     geomtime,
@@ -72,7 +72,7 @@ model.compile(
     loss_weights=loss_weights,
     decay=("inverse time", 2000, 0.9),
 )
-pde_residual_resampler = dde.callbacks.PDEResidualResampler(period=1)
+pde_residual_resampler = dde.callbacks.PDEPointResampler(period=1)
 losshistory, train_state = model.train(
     iterations=10000, callbacks=[pde_residual_resampler], display_every=500
 )

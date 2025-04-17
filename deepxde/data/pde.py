@@ -4,7 +4,12 @@ from .data import Data
 from .. import backend as bkd
 from .. import config
 from ..backend import backend_name
-from ..utils import get_num_args, run_if_all_none
+from ..utils import (
+    get_num_args,
+    has_default_values,
+    mpi_scatter_from_rank0,
+    run_if_all_none,
+)
 
 
 class PDE(Data):
@@ -92,6 +97,22 @@ class PDE(Data):
         self.num_domain = num_domain
         self.num_boundary = num_boundary
         self.train_distribution = train_distribution
+        if config.hvd is not None:
+            if self.train_distribution != "pseudo":
+                raise ValueError(
+                    "Parallel training via Horovod only supports "
+                    "train_distribution=pseudo."
+                )
+            if config.parallel_scaling == "weak":
+                print(
+                    "For weak scaling, num_domain and num_boundary are the numbers of "
+                    "points over each rank, not the total number of points."
+                )
+            elif config.parallel_scaling == "strong":
+                print(
+                    "For strong scaling, num_domain and num_boundary are the total "
+                    "number of points."
+                )
         self.anchors = None if anchors is None else anchors.astype(config.real(np))
         self.exclusions = exclusions
 
@@ -100,7 +121,7 @@ class PDE(Data):
 
         self.auxiliary_var_fn = auxiliary_var_function
 
-        # TODO: train_x_all is used for PDE losses. It is better to add train_x_pde 
+        # TODO: train_x_all is used for PDE losses. It is better to add train_x_pde
         # explicitly.
         self.train_x_all = None
         self.train_x_bc = None
@@ -115,8 +136,14 @@ class PDE(Data):
         self.test()
 
     def losses(self, targets, outputs, loss_fn, inputs, model, aux=None):
-        if backend_name in ["tensorflow.compat.v1", "tensorflow", "pytorch", "paddle"]:
+        if backend_name in ["tensorflow.compat.v1", "paddle"]:
             outputs_pde = outputs
+        elif backend_name in ["tensorflow", "pytorch"]:
+            if config.autodiff == "reverse":
+                outputs_pde = outputs
+            elif config.autodiff == "forward":
+                # forward-mode AD requires functions
+                outputs_pde = (outputs, aux[0])
         elif backend_name == "jax":
             # JAX requires pure functions
             outputs_pde = (outputs, aux[0])
@@ -126,12 +153,22 @@ class PDE(Data):
             if get_num_args(self.pde) == 2:
                 f = self.pde(inputs, outputs_pde)
             elif get_num_args(self.pde) == 3:
-                if self.auxiliary_var_fn is None:
-                    if aux is None or len(aux) == 1:
-                        raise ValueError("Auxiliary variable function not defined.")
-                    f = self.pde(inputs, outputs_pde, unknowns=aux[1])
-                else:
+                if self.auxiliary_var_fn is not None:
                     f = self.pde(inputs, outputs_pde, model.net.auxiliary_vars)
+                elif backend_name == "jax":
+                    # JAX inverse problem requires unknowns as the input.
+                    if len(aux) == 2:
+                        # External trainable variables in aux[1] are used for unknowns
+                        f = self.pde(inputs, outputs_pde, unknowns=aux[1])
+                    elif len(aux) == 1 and has_default_values(self.pde)[-1]:
+                        # No external trainable variables, default values are used for unknowns
+                        f = self.pde(inputs, outputs_pde)
+                    else:
+                        raise ValueError(
+                            "Default unknowns are required if no trainable variables are provided."
+                        )
+                else:
+                    raise ValueError("Auxiliary variable function not defined.")
             if not isinstance(f, (list, tuple)):
                 f = [f]
 
@@ -160,7 +197,20 @@ class PDE(Data):
     @run_if_all_none("train_x", "train_y", "train_aux_vars")
     def train_next_batch(self, batch_size=None):
         self.train_x_all = self.train_points()
-        self.train_x = self.bc_points()
+        self.bc_points()  # Generate self.num_bcs and self.train_x_bc
+        if self.bcs and config.hvd is not None:
+            num_bcs = np.array(self.num_bcs)
+            config.comm.Bcast(num_bcs, root=0)
+            self.num_bcs = list(num_bcs)
+
+            x_bc_shape = np.array(self.train_x_bc.shape)
+            config.comm.Bcast(x_bc_shape, root=0)
+            if len(self.train_x_bc) != x_bc_shape[0]:
+                self.train_x_bc = np.empty(x_bc_shape, dtype=self.train_x_bc.dtype)
+            config.comm.Bcast(self.train_x_bc, root=0)
+        self.train_x = self.train_x_bc
+        if config.parallel_scaling == "strong":
+            self.train_x_all = mpi_scatter_from_rank0(self.train_x_all)
         if self.pde is not None:
             self.train_x = np.vstack((self.train_x, self.train_x_all))
         self.train_y = self.soln(self.train_x) if self.soln else None
@@ -193,7 +243,10 @@ class PDE(Data):
         self.train_next_batch()
 
     def add_anchors(self, anchors):
-        """Add new points for training PDE losses. The BC points will not be updated."""
+        """Add new points for training PDE losses.
+
+        The BC points will not be updated.
+        """
         anchors = anchors.astype(config.real(np))
         if self.anchors is None:
             self.anchors = anchors
@@ -210,7 +263,10 @@ class PDE(Data):
             )
 
     def replace_with_anchors(self, anchors):
-        """Replace the current PDE training points with anchors. The BC points will not be changed."""
+        """Replace the current PDE training points with anchors.
+
+        The BC points will not be changed.
+        """
         self.anchors = anchors.astype(config.real(np))
         self.train_x_all = self.anchors
         self.train_x = self.bc_points()

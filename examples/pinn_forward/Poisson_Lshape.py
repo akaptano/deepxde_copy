@@ -1,4 +1,4 @@
-"""Backend supported: tensorflow.compat.v1, tensorflow, pytorch, jax"""
+"""Backend supported: tensorflow.compat.v1, tensorflow, pytorch, jax, paddle"""
 import deepxde as dde
 
 
@@ -7,8 +7,8 @@ def pde(x, y):
     dy_xx = dde.grad.hessian(y, x, i=0, j=0)
     dy_yy = dde.grad.hessian(y, x, i=1, j=1)
     # Backend jax
-    # dy_xx, _ = dde.grad.hessian(y, x, i=0, j=0, component=0)
-    # dy_yy, _ = dde.grad.hessian(y, x, i=1, j=1, component=0)
+    # dy_xx, _ = dde.grad.hessian(y, x, i=0, j=0)
+    # dy_yy, _ = dde.grad.hessian(y, x, i=1, j=1)
     return -dy_xx - dy_yy - 1
 
 

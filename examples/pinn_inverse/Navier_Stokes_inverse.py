@@ -1,4 +1,4 @@
-"""Backend supported: tensorflow.compat.v1, tensorflow, pytorch
+"""Backend supported: tensorflow.compat.v1, tensorflow, pytorch, paddle
 
 An inverse problem of the Navier-Stokes equation of incompressible flow around cylinder with Re=100
 
@@ -127,7 +127,7 @@ loss_history, train_state = model.train(
 dde.saveplot(loss_history, train_state, issave=True, isplot=True)
 model.compile("adam", lr=1e-4, external_trainable_variables=[C1, C2])
 loss_history, train_state = model.train(
-    epochs=10000, callbacks=[variable], display_every=1000, disregard_previous_best=True
+    iterations=10000, callbacks=[variable], display_every=1000, disregard_previous_best=True
 )
 dde.saveplot(loss_history, train_state, issave=True, isplot=True)
 # model.save(save_path = "./NS_inverse_model/model")

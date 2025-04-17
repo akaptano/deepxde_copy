@@ -9,9 +9,13 @@ __all__ = [
     "utils",
     "Model",
     "Variable",
+    "zcs",
 ]
 
-from .__about__ import __version__
+try:
+    from ._version import version as __version__
+except ImportError:
+    __version__ = "unknown version"
 
 # Should import backend before importing anything else
 from . import backend
@@ -23,6 +27,7 @@ from . import gradients as grad
 from . import icbc
 from . import nn
 from . import utils
+from . import zcs
 
 from .backend import Variable
 from .model import Model
@@ -31,11 +36,13 @@ from .utils import saveplot
 # Backward compatibility
 from .icbc import (
     DirichletBC,
+    Interface2DBC,
     NeumannBC,
     OperatorBC,
     PeriodicBC,
     RobinBC,
     PointSetBC,
+    PointSetOperatorBC,
     IC,
 )
 
