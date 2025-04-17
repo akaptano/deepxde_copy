@@ -7,7 +7,6 @@ import numpy as np
 from . import backend as bkd
 from .backend import backend_name, tf, torch, paddle
 from .real import Real
-os.environ["TF_USE_LEGACY_KERAS"]="1"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 # Data parallel

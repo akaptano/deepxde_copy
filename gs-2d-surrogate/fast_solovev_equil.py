@@ -67,8 +67,7 @@ def boundary_inner(x, on_boundary):
 def boundary_high(x, on_boundary):
     return on_boundary and np.isclose([x[0], x[1]], [1 - delta * eps, kappa * eps]).all()
 
-spatial_domain = dde.geometry.Ellipse(np.real([0.0,0.0]), eps, kappa, delta) 
-# spatial_domain = dde.geometry.Ellipse(eps, kappa, delta) 
+spatial_domain = dde.geometry.Ellipse_tokamak(eps, kappa, delta) 
 
 x,u = gen_traindata(8)
 
