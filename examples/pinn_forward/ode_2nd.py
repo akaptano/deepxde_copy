@@ -1,4 +1,4 @@
-"""Backend supported: tensorflow.compat.v1, tensorflow, pytorch"""
+"""Backend supported: tensorflow.compat.v1, tensorflow, pytorch, paddle"""
 import deepxde as dde
 import numpy as np
 
@@ -17,7 +17,7 @@ geom = dde.geometry.TimeDomain(0, 0.25)
 
 
 def boundary_l(t, on_initial):
-    return on_initial and np.isclose(t[0], 0)
+    return on_initial and dde.utils.isclose(t[0], 0)
 
 
 def bc_func1(inputs, outputs, X):

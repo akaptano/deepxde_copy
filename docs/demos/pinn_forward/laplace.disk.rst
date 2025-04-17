@@ -6,7 +6,7 @@ Problem setup
 
 We will solve a Laplace equation in a polar coordinate system:
 
-.. math:: r\frac{dy}{dr} + r^2\frac{dy}{dr^2} + \frac{dy}{d\theta^2} = 0,  \qquad r \in [0, 1], \quad \theta \in [0, 2\pi]
+.. math:: r\frac{dy}{dr} + r^2\frac{dy^2}{dr^2} + \frac{dy^2}{d\theta^2} = 0,  \qquad r \in [0, 1], \quad \theta \in [0, 2\pi]
 
 with the Dirichlet boundary condition
 
@@ -49,12 +49,12 @@ Next, we express the PDE residual of the Laplace equation:
 
 The first argument to ``pde`` is 2-dimensional vector where the first component(``x[:,0:1]``) is :math:`r`-coordinate and the second componenet (``x[:,1:]``) is the :math:`\theta`-coordinate. The second argument is the network output, i.e., the solution :math:`y(r,\theta)`.
 
-Next, we consider the Dirichlet boundary condition. We need to implement a function, which should return ``True`` for points inside the subdomain and ``False`` for the points outside. In our case, if the points satisfy :math:`r=1` and are on the whole boundary of the rectangle domain, then function ``boundary`` returns ``True``. Otherwise, it returns ``False``. (Note that because of rounding-off errors, it is often wise to use ``np.isclose`` to test whether two floating point values are equivalent.)
+Next, we consider the Dirichlet boundary condition. We need to implement a function, which should return ``True`` for points inside the subdomain and ``False`` for the points outside. In our case, if the points satisfy :math:`r=1` and are on the whole boundary of the rectangle domain, then function ``boundary`` returns ``True``. Otherwise, it returns ``False``. (Note that because of rounding-off errors, it is often wise to use ``dde.utils.isclose`` to test whether two floating point values are equivalent.)
 
 .. code-block:: python
 
     def boundary(x, on_boundary):
-        return on_boundary and np.isclose(x[0], 1)
+        return on_boundary and dde.utils.isclose(x[0], 1)
 
 The argument ``x`` to ``boundary`` is the network input and is a :math:`d`-dim vector, where :math:`d` is the dimension and :math:`d=2` in this case. To facilitate the implementation of ``boundary``, a boolean ``on_boundary`` is used as the second argument. If the point :math:`(r,\theta)` (the first argument) is on the entire boundary of the rectangle geometry that created above, then ``on_boundary`` is ``True``, otherwise, ``on_boundary`` is ``False``. 
 
@@ -65,7 +65,7 @@ Using a lambda funtion, the ``boundary`` we defined above can be passed to ``Dir
     bc_rad = dde.icbc.DirichletBC(
         geom,
         lambda x: np.cos(x[:, 1:2]),
-        lambda x, on_boundary: on_boundary and np.isclose(x[0], 1),
+        lambda x, on_boundary: on_boundary and dde.utils.isclose(x[0], 1),
     )
    
 Now, we have specified the geometry, PDE residual, and boundary condition. We then define the ``PDE`` problem as
@@ -87,6 +87,7 @@ The number 2540 is the number of training residual points sampled inside the dom
 Next, we choose the network. Here, we use a fully connected neural network of depth 4 (i.e., 3 hidden layers) and width 20:
 
 .. code-block:: python
+
     net = dde.nn.FNN([2] + [20] * 3 + [1], "tanh", "Glorot normal")
 
 If we rewrite this problem in cartesian coordinates, the variables are in the form of :math:`[r\sin(\theta), r\cos(\theta)]`. We use them as features to satisfy the certain underlying physical constraints, so that the network is automatically periodic along the :math:`\theta` coordinate and the period is :math:`2\pi`.

@@ -6,7 +6,7 @@ import numpy as np
 from . import config
 from . import gradients as grad
 from . import utils
-from .backend import backend_name, tf, torch, paddle
+from .backend import backend_name, jax, paddle, tf, torch
 
 
 class Callback:
@@ -137,7 +137,7 @@ class ModelCheckpoint(Callback):
         self.monitor = monitor
         self.monitor_op = np.less
         self.epochs_since_last_save = 0
-        self.best = np.Inf
+        self.best = np.inf
 
     def on_epoch_end(self):
         self.epochs_since_last_save += 1
@@ -151,7 +151,7 @@ class ModelCheckpoint(Callback):
                 if self.verbose > 0:
                     print(
                         "Epoch {}: {} improved from {:.2e} to {:.2e}, saving model to {} ...\n".format(
-                            self.model.train_state.epoch,
+                            self.model.train_state.iteration,
                             self.monitor,
                             self.best,
                             current,
@@ -188,9 +188,19 @@ class EarlyStopping(Callback):
             Training will stop if the model doesn't show improvement
             over the baseline.
         monitor: The loss function that is monitored. Either 'loss_train' or 'loss_test'
+        start_from_epoch: Number of epochs to wait before starting
+            to monitor improvement. This allows for a warm-up period in which
+            no improvement is expected and thus training will not be stopped.
     """
 
-    def __init__(self, min_delta=0, patience=0, baseline=None, monitor="loss_train"):
+    def __init__(
+        self,
+        min_delta=0,
+        patience=0,
+        baseline=None,
+        monitor="loss_train",
+        start_from_epoch=0,
+    ):
         super().__init__()
 
         self.baseline = baseline
@@ -199,6 +209,7 @@ class EarlyStopping(Callback):
         self.min_delta = min_delta
         self.wait = 0
         self.stopped_epoch = 0
+        self.start_from_epoch = start_from_epoch
 
         self.monitor_op = np.less
         self.min_delta *= -1
@@ -210,9 +221,11 @@ class EarlyStopping(Callback):
         if self.baseline is not None:
             self.best = self.baseline
         else:
-            self.best = np.Inf if self.monitor_op == np.less else -np.Inf
+            self.best = np.inf if self.monitor_op == np.less else -np.inf
 
     def on_epoch_end(self):
+        if self.model.train_state.iteration < self.start_from_epoch:
+            return
         current = self.get_monitor_value()
         if self.monitor_op(current - self.min_delta, self.best):
             self.best = current
@@ -220,7 +233,7 @@ class EarlyStopping(Callback):
         else:
             self.wait += 1
             if self.wait >= self.patience:
-                self.stopped_epoch = self.model.train_state.epoch
+                self.stopped_epoch = self.model.train_state.iteration
                 self.model.stop_training = True
 
     def on_train_end(self):
@@ -261,7 +274,7 @@ class Timer(Callback):
             self.model.stop_training = True
             print(
                 "\nStop training as time used up. time used: {:.1f} mins, epoch trained: {}".format(
-                    (time.time() - self.t_start) / 60, self.model.train_state.epoch
+                    (time.time() - self.t_start) / 60, self.model.train_state.iteration
                 )
             )
 
@@ -330,8 +343,11 @@ class VariableValue(Callback):
             self.value = [var.numpy() for var in self.var_list]
         elif backend_name in ["pytorch", "paddle"]:
             self.value = [var.detach().item() for var in self.var_list]
+        elif backend_name == "jax":
+            self.value = [var.value for var in self.var_list]
+
         print(
-            self.model.train_state.epoch,
+            self.model.train_state.iteration,
             utils.list_to_str(self.value, precision=self.precision),
             file=self.file,
         )
@@ -358,13 +374,23 @@ class OperatorPredictor(Callback):
     Args:
         x: The input data.
         op: The operator with inputs (x, y).
+        period (int): Interval (number of epochs) between checking values.
+        filename (string): Output the values to the file `filename`.
+            The file is kept open to allow instances to be re-used.
+            If ``None``, output to the screen.
+        precision (int): The precision of variables to display.
     """
 
-    def __init__(self, x, op):
+    def __init__(self, x, op, period=1, filename=None, precision=2):
         super().__init__()
         self.x = x
         self.op = op
+        self.period = period
+        self.precision = precision
+
+        self.file = sys.stdout if filename is None else open(filename, "w", buffering=1)
         self.value = None
+        self.epochs_since_last = 0
 
     def init(self):
         if backend_name == "tensorflow.compat.v1":
@@ -380,8 +406,35 @@ class OperatorPredictor(Callback):
         elif backend_name == "pytorch":
             self.x = torch.as_tensor(self.x)
             self.x.requires_grad_()
+        elif backend_name == "jax":
+
+            @jax.jit
+            def op(inputs, params):
+                y_fn = lambda _x: self.model.net.apply(params, _x)
+                return self.op(inputs, (y_fn(inputs), y_fn))
+
+            self.jax_op = op
         elif backend_name == "paddle":
             self.x = paddle.to_tensor(self.x, stop_gradient=False)
+
+    def on_train_begin(self):
+        self.on_predict_end()
+        print(
+            self.model.train_state.iteration,
+            utils.list_to_str(self.value.flatten().tolist(), precision=self.precision),
+            file=self.file,
+        )
+        self.file.flush()
+
+    def on_train_end(self):
+        if not self.epochs_since_last == 0:
+            self.on_train_begin()
+
+    def on_epoch_end(self):
+        self.epochs_since_last += 1
+        if self.epochs_since_last >= self.period:
+            self.epochs_since_last = 0
+            self.on_train_begin()
 
     def on_predict_end(self):
         if backend_name == "tensorflow.compat.v1":
@@ -394,15 +447,12 @@ class OperatorPredictor(Callback):
             self.model.net.eval()
             outputs = self.model.net(self.x)
             self.value = utils.to_numpy(self.op(self.x, outputs))
+        elif backend_name == "jax":
+            self.value = utils.to_numpy(self.jax_op(self.x, self.model.net.params))
         elif backend_name == "paddle":
             self.model.net.eval()
             outputs = self.model.net(self.x)
             self.value = utils.to_numpy(self.op(self.x, outputs))
-        else:
-            # TODO: other backends
-            raise NotImplementedError(
-                f"OperatorPredictor not implemented for backend {backend_name}."
-            )
 
     def get_value(self):
         return self.value
@@ -511,10 +561,10 @@ class PDEPointResampler(Callback):
 
     Args:
         period: How often to resample the training points (default is 100 iterations).
-        pde_points: If True, resample the training points for PDE losses (default is 
+        pde_points: If True, resample the training points for PDE losses (default is
             True).
-        bc_points: If True, resample the training points for BC losses (default is 
-            False; only supported by pytorch backend currently).
+        bc_points: If True, resample the training points for BC losses (default is
+            False; only supported by PyTorch and PaddlePaddle backend currently).
     """
 
     def __init__(self, period=100, pde_points=True, bc_points=False):

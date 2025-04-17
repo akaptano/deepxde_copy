@@ -26,7 +26,14 @@ class FNN(NN):
     ):
         super().__init__()
         self.layer_size = layer_sizes
-        self.activation = activations.get(activation)
+        if isinstance(activation, list):
+            if not (len(layer_sizes) - 1) == len(activation):
+                raise ValueError(
+                    "Total number of activation functions do not match with sum of hidden layers and output layer!"
+                )
+            self.activation = list(map(activations.get, activation))
+        else:
+            self.activation = activations.get(activation)
         self.kernel_initializer = initializers.get(kernel_initializer)
         self.regularizer = regularizers.get(regularization)
         self.dropout_rate = dropout_rate
@@ -60,7 +67,11 @@ class FNN(NN):
                 y = self._dense(
                     y,
                     self.layer_size[i + 1],
-                    activation=self.activation,
+                    activation=(
+                        self.activation[i]
+                        if isinstance(self.activation, list)
+                        else self.activation
+                    ),
                     use_bias=self.use_bias,
                 )
             elif self.batch_normalization and self.layer_normalization:
@@ -81,6 +92,8 @@ class FNN(NN):
                     "batch_normalization: {}, layer_normalization: {}".format(
                         self.batch_normalization, self.layer_normalization
                     )
+                    + "\n'before' and 'after' are the only acceptable values for"
+                    + " batch_normalization and layer_normalization."
                 )
             if self.dropout_rate > 0:
                 y = tf.layers.dropout(y, rate=self.dropout_rate, training=self.training)
@@ -92,16 +105,7 @@ class FNN(NN):
         self.built = True
 
     def _dense(self, inputs, units, activation=None, use_bias=True):
-        # Cannot directly replace tf.layers.dense() with tf.keras.layers.Dense() due to
-        # some differences. One difference is that tf.layers.dense() will add
-        # regularizer loss to the collection REGULARIZATION_LOSSES, but
-        # tf.keras.layers.Dense() will not. Hence, tf.losses.get_regularization_loss()
-        # cannot be used for tf.keras.layers.Dense().
-        # References:
-        # - https://github.com/tensorflow/tensorflow/issues/21587
-        # - https://www.tensorflow.org/guide/migrate
-        return tf.layers.dense(
-            inputs,
+        dense = tf.keras.layers.Dense(
             units,
             activation=activation,
             use_bias=use_bias,
@@ -109,6 +113,10 @@ class FNN(NN):
             kernel_regularizer=self.regularizer,
             kernel_constraint=self.kernel_constraint,
         )
+        out = dense(inputs)
+        if self.regularizer:
+            self.regularization_loss += tf.math.add_n(dense.losses)
+        return out
 
     @staticmethod
     def _dense_weightnorm(inputs, units, activation=None, use_bias=True):
@@ -144,7 +152,6 @@ class FNN(NN):
         """
 
         with tf.variable_scope("layer_norm"):
-
             mean, var = tf.nn.moments(inputs, axes=[1], keepdims=True)
 
             if elementwise_affine:

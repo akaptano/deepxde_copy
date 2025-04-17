@@ -1,14 +1,14 @@
 """tensorflow backend implementation"""
-from distutils.version import LooseVersion
+from packaging.version import Version
 
 import tensorflow as tf
 import tensorflow_probability as tfp
 
 
-if LooseVersion(tf.__version__) < LooseVersion("2.2.0"):
-    raise RuntimeError("DeepXDE requires TensorFlow>=2.2.0.")
-if LooseVersion(tfp.__version__) < LooseVersion("0.10.0"):
-    raise RuntimeError("DeepXDE requires TensorFlow Probability>=0.10.0.")
+if Version(tf.__version__) < Version("2.3.0"):
+    raise RuntimeError("DeepXDE requires TensorFlow>=2.3.0.")
+if Version(tfp.__version__) < Version("0.11.0"):
+    raise RuntimeError("DeepXDE requires TensorFlow Probability>=0.11.0.")
 
 lib = tf
 
@@ -75,6 +75,30 @@ def to_numpy(input_tensor):
     return input_tensor.numpy()
 
 
+def concat(values, axis):
+    return tf.concat(values, axis)
+
+
+def stack(values, axis):
+    return tf.stack(values, axis)
+
+
+def expand_dims(tensor, axis):
+    return tf.expand_dims(tensor, axis)
+
+
+def reverse(tensor, axis):
+    return tf.reverse(tensor, axis)
+
+
+def roll(tensor, shift, axis):
+    return tf.roll(tensor, shift, axis)
+
+
+def lgamma(x):
+    return tf.math.lgamma(x)
+
+
 def elu(x):
     return tf.nn.elu(x)
 
@@ -99,12 +123,33 @@ def sin(x):
     return tf.math.sin(x)
 
 
+def cos(x):
+    return tf.math.cos(x)
+
+
+def exp(x):
+    return tf.math.exp(x)
+
+
 def square(x):
     return tf.math.square(x)
 
 
+# pylint: disable=redefined-builtin
+def abs(x):
+    return tf.math.abs(x)
+
+
+def minimum(x, y):
+    return tf.math.minimum(x, y)
+
+
 def tanh(x):
     return tf.math.tanh(x)
+
+
+def pow(x, y):
+    return tf.math.pow(x, y)
 
 
 def mean(input_tensor, dim, keepdims=False):
@@ -123,6 +168,32 @@ def reduce_sum(input_tensor):
     return tf.math.reduce_sum(input_tensor)
 
 
+def prod(input_tensor, dim, keepdims=False):
+    return tf.math.reduce_prod(input_tensor, axis=dim, keepdims=keepdims)
+
+
+def reduce_prod(input_tensor):
+    return tf.math.reduce_prod(input_tensor)
+
+
+# pylint: disable=redefined-builtin
+def min(input_tensor, dim, keepdims=False):
+    return tf.math.reduce_min(input_tensor, axis=dim, keepdims=keepdims)
+
+
+def reduce_min(input_tensor):
+    return tf.math.reduce_min(input_tensor)
+
+
+# pylint: disable=redefined-builtin
+def max(input_tensor, dim, keepdims=False):
+    return tf.math.reduce_max(input_tensor, axis=dim, keepdims=keepdims)
+
+
+def reduce_max(input_tensor):
+    return tf.math.reduce_max(input_tensor)
+
+
 def norm(tensor, ord=None, axis=None, keepdims=False):
     if ord is None:
         ord = "euclidean"
@@ -135,3 +206,19 @@ def zeros(shape, dtype):
 
 def zeros_like(input_tensor):
     return tf.zeros_like(input_tensor)
+
+
+def matmul(x, y):
+    return tf.linalg.matmul(x, y)
+
+
+def l1_regularization(l1):
+    return tf.keras.regularizers.L1(l1=l1)
+
+
+def l2_regularization(l2):
+    return tf.keras.regularizers.L2(l2=l2)
+
+
+def l1_l2_regularization(l1, l2):
+    return tf.keras.regularizers.L1L2(l1=l1, l2=l2)
