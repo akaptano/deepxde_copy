@@ -222,7 +222,7 @@ class Ellipse_tokamak(Geometry):
             xmin = np.array([1-eps,-1.1*kappa * eps])
             xmax = np.array([1+eps, 1.1*kappa * eps])
 
-        super(Ellipse_tokamak, self).__init__(2, (xmin, xmax), 1)
+        super().__init__(2, (xmin, xmax), 1)
 
     def inside(self, x):
         return is_point_in_path(x[:, 0:1], x[:, 1:2], self.x_ellipse)

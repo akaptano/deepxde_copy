@@ -48,7 +48,7 @@ def main():
         psi_homogeneous = 0.0  # todo 
         return psi_particular + psi_homogeneous 
 
-    spatial_domain = dde.geometry.Ellipse(eps, kappa, delta) 
+    spatial_domain = dde.geometry.Ellipse_tokamak(eps, kappa, delta) 
 
     # specify psi, psi_r, psi_z, psi_rr, psi_zz at three locations 
     observe_x = np.asarray([[1 + eps, 0], [1 - eps, 0], [1 - delta * eps, kappa * eps]])

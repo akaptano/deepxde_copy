@@ -82,7 +82,7 @@ bc135 = dde.PointSetBC(x,u)
 ITER = GS_Linear(eps=0.32, kappa=1.7, delta=0.33)
 ITER.get_BCs(A=A)
 ITER.solve_coefficients()
-sampling_types = ["uniform", "pseudo", "LHS", "Halton", "Hammersley", "Sobol"]
+sampling_types = ["uniform"]  #, "pseudo", "LHS", "Halton", "Hammersley", "Sobol"]
 colors = ['r', 'b', 'g', 'k', 'c', 'm']
 
 for i, sampling in enumerate(sampling_types):

@@ -487,7 +487,7 @@ def compute_params(x, y, psi_true, psi_pred):
 
 
 def relative_error_plot(
-    fig, ax, x, y, error, model, ITER, X_test, DIVERTOR=False,
+    fig, ax, x, y, error, model, ITER, X_test, v=None,
 ):
     """
         Make summary plot of the solution and normalized errors, as in
@@ -505,8 +505,8 @@ def relative_error_plot(
          eps * kappa * np.sin(tau)]
     ).T[::-1]
 
-    # if DIVERTOR:
-    #     x_ellipse = v
+    if v is not None:
+        x_ellipse = v
     X_bc = np.vstack((np.ravel(x_ellipse[:, 0]), np.ravel(x_ellipse[:, 1]))).T
 
     nlevels = 1000

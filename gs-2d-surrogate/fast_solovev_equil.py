@@ -336,5 +336,5 @@ ax4.axis(xmin=innerPoint,xmax=outerPoint,ymin=lowPoint, ymax=highPoint)
 fig.tight_layout()
 plt.savefig('fast_solve_summary.png')
 
-model.print_model()
+# model.print_model()
 plt.show()
