@@ -193,6 +193,8 @@ class HyperEllipticalToroid(Geometry):
         )
         # self.center, self.eps, self.kappa, self.delta = np.array(
         #     [[0.0, 0.0, 0.0]]), eps, kappa, delta
+
+        # a uniform grid of points for each parameter in each dimension (or, say, in a one dimensional setting) on the boundary
         self.tau = np.linspace(0, 2 * np.pi, self.N)
         Arange = np.linspace(-Amax, Amax, self.num_param)
         self.eps = np.linspace(eps_range[0], eps_range[1], self.num_param)
@@ -217,6 +219,7 @@ class HyperEllipticalToroid(Geometry):
                         delta_ellipse[:, i, j, k, kk] = self.delta[kk]
 
         # Define boundary of hyper-elliptical disk
+        # Reshape the array by transposing it and then reshaping it
         self.x_ellipse = np.transpose(
             np.asarray(
                 [R_ellipse, Z_ellipse, A_ellipse,
@@ -320,106 +323,237 @@ class HyperFourierEllipse(Geometry):
         Class for parametric PINNs for toroidal shapes depending on mpol
         shape parameters and one parameter that controls the pressure profile,
         so number of inputs is
-        2 (X, Y) + 1 (A) + 2 * mpol (R(0, 1), ..., R(0, mpol), Z(0, 1), ..., Z(0, mpol))
+        2 (X, Y) + 1 (A) + 2 * mpol (R_1, ..., R_mpol, Z_1, ..., Z_mpol) + 1 (R_0) = 4 + 2 * mpol
     """
     def __init__(
         self,
-        mpol=1,
+        mpol=1,     # number of Fourier modes
         x_ellipse=[],
-        Amax=0.1,
-        num_param=2,
-        RZm_max=0.1,
-        minor_radius=0.8
+        Amax=0.1,    # maximum value of A
+        num_param=2, # number of parameters per dimension (Fourier modes)
+        RZm_max=0.1, # maximum absolute value of R and Z
+        minor_radius=0.8 # minor radius
     ):
         if minor_radius >= 1.0:
             raise ValueError(
                 'Minor radius must be less than 1, since the major radius'
                 ' is hard-coded to this value'
             )
-        self.N = 100
-        self.num_param = num_param
-        self.num_dims = 3 + 2 * mpol
-        self.tau = np.linspace(0, 2 * np.pi, self.N)
-        self.minor_radius = minor_radius
+        self.N = 100  # number of collocation points on the boundary?????
+        self.num_param = num_param  # number of parameters per dimension
+        self.num_dims = 4 + 2 * mpol  # number of dimensions, in this case R, Z, A, and mpol Fourier modes
+        self.tau = np.linspace(0, 2 * np.pi, self.N)  # values for theta?
+        self.minor_radius = minor_radius  
+        self.mpol = mpol  # number of Fourier modes
 
         # begin with perfectly circular cross-section
-        self.center = np.zeros((3 + 2 * mpol))
+        self.center = np.zeros((self.num_dims))     # center of the ellipse, should have the same number of dimensions as self.num_dims
 
-        Arange = np.linspace(-Amax, Amax, self.num_param)
-        Rm = np.linspace(-RZm_max, RZm_max, self.num_param)
-        Zm = np.linspace(-RZm_max, RZm_max, self.num_param)
+
+############################ Start of New #############################
+
+        # Define x_array as a holder for [R, Z, A, Rm, Zm], 
+        # where dimensions of Rm and Zm depends on mpol
+        # This is what we want to plug into x_ellipse
+        x_array = []
+
+        Arange = np.linspace(-Amax, Amax, self.num_param)  # range of A 
+        Rm = np.linspace(-RZm_max, RZm_max, self.num_param)  # range of Rm
+        Zm = np.linspace(-RZm_max, RZm_max, self.num_param)  # range of Zm
 
         Rm_grid = Rm
         Zm_grid = Zm
-        for i in range(mpol + 1):
-            Rm_grid = np.outer(Rm_grid, Rm).reshape(2 * mpol * np.ones(i + 2, dtype=int))
-            Zm_grid = np.outer(Zm_grid, Zm).reshape(2 * mpol * np.ones(i + 2, dtype=int))
-        # Rm_grid = [Rm] * mpol
-        print(Rm_grid.shape)
 
-        # assume that minor radius R(0, 0) = 1
-        R_ellipse = np.ones((self.N, self.num_param, *Rm_grid.shape))
-        R0 = np.outer(
-            self.minor_radius * np.cos(self.tau),
-            np.ravel(np.ones((self.num_param, *Rm_grid.shape)))
-            ).reshape(R_ellipse.shape)
-        R_ellipse = (1 + R0) * R_ellipse
+        shape = (self.N,) + (self.num_param,) * (mpol*2)  # (100, 4, 4, 4, 4)
+        R_ellipse = np.ones(shape)
+        Z_ellipse = np.ones(shape)
+        A_ellipse = np.ones(shape)
+        Rm_ellipse = np.ones(shape)
+        Zm_ellipse = np.ones(shape)
 
-        # Z(0, 0) = sin(tau)
-        Z_ellipse = np.ones((self.N, self.num_param, *Rm_grid.shape))
-        Z0 = np.outer(
-            self.minor_radius * np.sin(self.tau),
-            np.ravel(np.ones((self.num_param, *Rm_grid.shape)))
-            ).reshape(Z_ellipse.shape)
-        Z_ellipse = Z0 * Z_ellipse
 
-        A_ellipse = np.zeros((self.N, self.num_param, *Rm_grid.shape))
+        # We have to handle Rm and Zm first, so we can calculate R_ellipse and Z_ellipse using them
 
-        for i in range(self.num_param):
-            for m in range(1, mpol + 1):  # sum over m
-                R_ellipse[:, i, ...] += np.outer(
-                    np.cos(m * self.tau),
-                    np.ravel(Rm_grid)
-                    ).reshape(self.N, *Rm_grid.shape)
-                Z_ellipse[:, i, ...] += np.outer(
-                    np.sin(m * self.tau),
-                    np.ravel(Zm_grid)
-                    ).reshape(self.N, *Rm_grid.shape)
-            A_ellipse[:, i, ...] = Arange[i]
+        # Initialize base arrays for Fourier coefficients
+        # R0 is 1 (nonzero) and Z0 is 0 for the base circular shape
+        R0 = np.ones(shape)  # R0 coefficient is 1 for circular base shape
+        Z0 = np.zeros(shape) # Z0 coefficient is 0 for circular base shape
 
+        # Initialize arrays for higher order Fourier coefficients
+        Rm_coeffs = []
+        Zm_coeffs = []
+        
+        # For each Fourier mode m, create coefficient arrays
+        for m in range(1, mpol + 1):
+            # Create coefficient arrays with proper shape
+            Rm_m = np.ones(shape) * Rm_grid
+            Zm_m = np.ones(shape) * Zm_grid
+            Rm_coeffs.append(Rm_m)
+            Zm_coeffs.append(Zm_m)
+
+
+        # Stack all coefficients together
+        # shape for Rm_grid: (100, 4, 4, 4, 4, 3)
+        # 100: number of points in tau
+        # 4, 4, 4, 4: parameter dimensions
+        # 3: Fourier modes (m=0,1,2)
+        Rm_grid = np.stack([R0] + Rm_coeffs, axis=-1)  
+        Zm_grid = np.stack([Z0] + Zm_coeffs, axis=-1)
+
+
+        # Create indices for all combinations instead of using nested loops
+        indices = np.indices((self.num_param,) * (mpol*2)).reshape(mpol*2, -1).T
+        # print("indices.shape", indices.shape)  # (256 = 4^4, 4)
+
+        # Now we can calculate R_ellipse and Z_ellipse using the indices
+
+        for idx in indices:
+            slc = (slice(None),) + tuple(idx)   # (slice(None, None, None), 0, 0, 0, 0)
+            # print("np.cos(m * self.tau).shape", np.cos(m * self.tau).shape)  # (100,)
+            # print("Rm_grid.shape", Rm_grid.shape)  # (100, 4, 4, 4, 4, 3)
+            # print("Rm_grid[slc][:, m].shape", Rm_grid[slc][:, 0].shape)  # (100, )
+            print(np.array([np.multiply(Rm_grid[slc][:, m], np.cos(m * self.tau)) for m in range(Rm_grid.shape[-1])]).shape)
+            R_ellipse[slc] = np.sum([np.multiply(Rm_grid[slc][:, m], np.cos(m * self.tau)) for m in range(Rm_grid.shape[-1])], axis=0) 
+            Z_ellipse[slc] = np.sum([np.multiply(Zm_grid[slc][:, m], np.sin(m * self.tau)) for m in range(Zm_grid.shape[-1])], axis=0) 
+            A_ellipse[slc] = Arange[idx[0]]
+
+
+
+        # Store the components
         self.R_ellipse = R_ellipse
         self.Z_ellipse = Z_ellipse
+        self.A_ellipse = A_ellipse
+        self.Rm_ellipse = Rm_grid
+        self.Zm_ellipse = Zm_grid
 
-        Rm_grid = np.ones((self.N, self.num_param, *Rm_grid.shape)) * Rm_grid
-        Zm_grid = np.ones((self.N, self.num_param, *Zm_grid.shape)) * Zm_grid
+        x_array = np.concatenate([R_ellipse, Z_ellipse, A_ellipse], axis=-1)
+        # Split Rm_grid and Zm_grid along last axis dynamically
+        Rm_components = np.moveaxis(Rm_grid, -1, 0)  # Move last axis to first, shape: (mpol+1, 100, 4, 4, 4, 4)
+        Zm_components = np.moveaxis(Zm_grid, -1, 0)  # Move last axis to first, shape: (mpol+1, 100, 4, 4, 4, 4)
 
-        # Define boundary of hyper-cross-section
-        inds = np.roll(np.arange(0, len(Rm_grid.shape) + 1), -1)
-        x_ellipse = np.transpose(
-            np.array([R_ellipse, Z_ellipse, A_ellipse]),
-            inds
-        )
-        start = 0
-        end = self.num_param
-        for i in range(mpol):
-            Rm_grid_partial = np.ones(Rm_grid.shape)
-            Zm_grid_partial = np.ones(Zm_grid.shape)
-            slc = [slice(None)] * len(Rm_grid.shape)
-            slc[2 + i] = slice(start, end)
-            Rm_grid_partial[slc] = Rm
-            Zm_grid_partial[slc] = Zm
-            Rm_grid_partial = Rm_grid_partial.reshape(*Rm_grid_partial.shape, 1)
-            Zm_grid_partial = Zm_grid_partial.reshape(*Zm_grid_partial.shape, 1)
-            x_ellipse = np.concatenate([x_ellipse, Rm_grid_partial], axis=-1)
-            x_ellipse = np.concatenate([x_ellipse, Zm_grid_partial], axis=-1)
 
-        print(x_ellipse.shape, Rm_grid.shape)
-        self.x_ellipse = x_ellipse.reshape(
-            self.N * self.num_param ** (1 + 2 * mpol),
-            3 + 2 * mpol
-        )
+        # Combine R_ellipse, Z_ellipse, A_ellipse, Rm_components and Zm_components 
+        # x_array has shape (100, 4, 4, 4, 4, 9)
+        x_array = np.stack([R_ellipse, Z_ellipse, A_ellipse] + 
+                         [comp for comp in Rm_components] + 
+                         [comp for comp in Zm_components], axis=-1)
 
-        # setting xmin and xmax for bbox
+        # x_ellipse = x_array.reshape(self.N * self.num_param ** (1 + 2 * mpol), 4 + 2 * mpol)
+
+
+
+
+#################### End of New ####################
+
+#################### Start of Old ####################
+
+        def old_code():
+
+            Arange = np.linspace(-Amax, Amax, self.num_param)  # range of A 
+            Rm = np.linspace(-RZm_max, RZm_max, self.num_param)  # range of Rm
+            Zm = np.linspace(-RZm_max, RZm_max, self.num_param)  # range of Zm
+            print("Rm.shape", Rm.shape)  # Rm.shape (4,)
+            print("Zm.shape", Zm.shape)  # Zm.shape (4,)
+
+    
+            Rm_grid = Rm
+            Zm_grid = Zm
+
+            # Why did we do this? Why do we multiply the arrays with themselves? 
+            # I guess to make the (4, 4, 4, 4) array?
+            for i in range(mpol + 1):
+                Rm_grid = np.outer(Rm_grid, Rm).reshape(2 * mpol * np.ones(i + 2, dtype=int))
+                Zm_grid = np.outer(Zm_grid, Zm).reshape(2 * mpol * np.ones(i + 2, dtype=int))
+            # Rm_grid = [Rm] * mpol
+            print("Rm_grid.shape", Rm_grid.shape)  #Rm_grid.shape (4, 4, 4, 4)
+
+
+
+            # assume that minor radius R(0, 0) = 1
+            R_ellipse = np.ones((self.N, self.num_param, *Rm_grid.shape))
+            R0 = np.outer(self.minor_radius * np.cos(self.tau), np.ravel(np.ones((self.num_param, *Rm_grid.shape)))).reshape(R_ellipse.shape)
+            print("R0.shape", R0.shape) # R0.shape (100, 4, 4, 4, 4, 4)
+            R_ellipse = (1 + R0) * R_ellipse
+            print("R_ellipse.shape", R_ellipse.shape) # R_ellipse.shape (100, 4, 4, 4, 4, 4)
+
+
+            # Z(0, 0) = sin(tau)
+            Z_ellipse = np.ones((self.N, self.num_param, *Rm_grid.shape))
+            Z0 = np.outer(self.minor_radius * np.sin(self.tau),np.ravel(np.ones((self.num_param, *Rm_grid.shape)))).reshape(Z_ellipse.shape)
+            Z_ellipse = Z0 * Z_ellipse
+
+            Z_ellipse = np.zeros((self.N, self.num_param))
+            # Z0 = self.minor_radius * np.sin(self.tau)
+            # Z_ellipse = np.outer(Z0, np.ones(self.num_param)) * Z_ellipse
+
+
+
+
+            for i in range(self.num_param):
+                for m in range(1, mpol + 1):  # sum over m
+                    R_ellipse[:, i, ...] += np.outer(np.cos(m * self.tau), np.ravel(Rm_grid)).reshape(self.N, *Rm_grid.shape)
+                    print("R_ellipse[:, i, ...].shape", R_ellipse[:, i, ...].shape)
+                    print("np.cos(m * self.tau).shape", np.cos(m * self.tau).shape)
+                    print("np.ravel(Rm_grid).shape", np.ravel(Rm_grid).shape)
+                    Z_ellipse[:, i, ...] += np.outer(np.sin(m * self.tau), np.ravel(Zm_grid)).reshape(self.N, *Rm_grid.shape)
+                    print("Z_ellipse[:, i, ...].shape", Z_ellipse[:, i, ...].shape)
+                    print("Zm_grid.shape", Zm_grid.shape)
+                A_ellipse[:, i, ...] = Arange[i]
+
+            A_ellipse = np.outer(np.ones(self.N), Arange)
+
+            # Store the components
+            self.R_ellipse = R_ellipse
+            self.Z_ellipse = Z_ellipse
+            self.A_ellipse = A_ellipse
+
+            Rm_grid = np.ones((self.N, self.num_param, *Rm_grid.shape)) * Rm_grid
+            Zm_grid = np.ones((self.N, self.num_param, *Zm_grid.shape)) * Zm_grid
+
+            # Define boundary of hyper-cross-section
+            inds = np.roll(np.arange(0, len(Rm_grid.shape) + 1), -1)  # this shifts the sequence one position to the left
+            x_ellipse = np.transpose(
+                np.array([R_ellipse, Z_ellipse, A_ellipse]),
+                inds
+            )
+
+            # The above code handles R, Z, A, and the code below handles Rm, Zm by concatenating into the x_ellipse.
+            # I think we can do this with one array. 
+
+            start = 0
+            end = self.num_param
+            for i in range(mpol):
+                Rm_grid_partial = np.ones(Rm_grid.shape)
+                Zm_grid_partial = np.ones(Zm_grid.shape)
+                slc = [slice(None)] * len(Rm_grid.shape)
+                print("i", i)
+                print("slc", slc)
+                slc[2 + i] = slice(start, end)
+                print("slc", slc)
+                print("Rm_grid_partial.shape", Rm_grid_partial.shape)
+                print("Zm_grid_partial.shape", Zm_grid_partial.shape)
+
+                Rm_grid_partial[slc] = Rm
+                Zm_grid_partial[slc] = Zm
+                Rm_grid_partial = Rm_grid_partial.reshape(*Rm_grid_partial.shape, 1)
+                Zm_grid_partial = Zm_grid_partial.reshape(*Zm_grid_partial.shape, 1)
+                x_ellipse = np.concatenate([x_ellipse, Rm_grid_partial], axis=-1)
+                x_ellipse = np.concatenate([x_ellipse, Zm_grid_partial], axis=-1)
+
+            print("x_ellipse.shape", x_ellipse.shape, "Rm_grid.shape", Rm_grid.shape)
+
+
+            self.x_ellipse = x_ellipse.reshape(
+                self.N * self.num_param ** (1 + 2 * mpol),
+                4 + 2 * mpol
+            )
+
+
+#################### End of Old ####################
+
+
+
+        # setting xmin and xmax for bounding box
         xmin = np.array([
             1 - self.minor_radius - RZm_max,
             -1 - RZm_max - self.minor_radius,
@@ -429,6 +563,7 @@ class HyperFourierEllipse(Geometry):
             1 + RZm_max + self.minor_radius,
             Amax])
 
+        # Add bounds for Fourier coefficients
         for m in range(2 * mpol):
             xmin = np.concatenate((xmin, [-RZm_max]))
             xmax = np.concatenate((xmax, [RZm_max]))
@@ -436,7 +571,7 @@ class HyperFourierEllipse(Geometry):
         self.Amax = Amax
         self.RZm_max = RZm_max
 
-        super(HyperFourierEllipse, self).__init__(3 + 2 * mpol, (xmin, xmax), 1)
+        super(HyperFourierEllipse, self).__init__(4 + 2 * mpol, (xmin, xmax), 1)
 
     def inside(self, x):
         return (np.sqrt((x[:, 0:1] - 1.0) ** 2 + x[:, 1:2] ** 2) < self.minor_radius)
@@ -532,7 +667,7 @@ class HyperFourierEllipse(Geometry):
         )
         X = X.reshape(
             n * self.num_param ** (1 + 2 * mpol),
-            3 + 2 * mpol
+            4 + 2 * mpol
         )
         return X
 
@@ -546,9 +681,9 @@ class HyperFourierEllipse(Geometry):
 
         Rm_grid = Rm
         Zm_grid = Zm
-        for i in range(mpol + 1):
-            Rm_grid = np.outer(Rm_grid, Rm).reshape(2 * mpol * np.ones(i + 2, dtype=int))
-            Zm_grid = np.outer(Zm_grid, Zm).reshape(2 * mpol * np.ones(i + 2, dtype=int))
+        for i in range(self.mpol + 1):
+            Rm_grid = np.outer(Rm_grid, Rm).reshape(2 * self.mpol * np.ones(i + 2, dtype=int))
+            Zm_grid = np.outer(Zm_grid, Zm).reshape(2 * self.mpol * np.ones(i + 2, dtype=int))
 
         # assume that major radius R(0, 0) = 1
         R_ellipse = np.ones((n, self.num_param, *Rm_grid.shape))
@@ -569,7 +704,7 @@ class HyperFourierEllipse(Geometry):
         A_ellipse = np.zeros((n, self.num_param, *Rm_grid.shape))
 
         for i in range(self.num_param):
-            for m in range(1, mpol + 1):  # sum over m
+            for m in range(1, self.mpol + 1):  # sum over m
                 R_ellipse[:, i, ...] += np.outer(np.cos(m * self.tau), Rm_grid).reshape(n, *Rm_grid.shape)
                 Z_ellipse[:, i, ...] += np.outer(np.sin(m * self.tau), Zm_grid).reshape(n, *Rm_grid.shape)
             A_ellipse[:, i, ...] = Arange[i]
@@ -585,7 +720,7 @@ class HyperFourierEllipse(Geometry):
         )
         start = 0
         end = self.num_param
-        for i in range(mpol):
+        for i in range(self.mpol):
             Rm_grid_partial = np.ones(Rm_grid.shape)
             Zm_grid_partial = np.ones(Zm_grid.shape)
             slc = [slice(None)] * len(Rm_grid.shape)
@@ -597,14 +732,14 @@ class HyperFourierEllipse(Geometry):
             X = np.concatenate([X, Rm_grid_partial], axis=-1)
             X = np.concatenate([X, Zm_grid_partial], axis=-1)
 
-        inds = np.roll(np.arange(0, len(x_ellipse.shape)), -1)
+        inds = np.roll(np.arange(0, len(self.x_ellipse.shape)), -1)
         X = np.transpose(
             X,
             inds
         )
         X = X.reshape(
-            n * self.num_param ** (1 + 2 * mpol),
-            3 + 2 * mpol
+            n * self.num_param ** (1 + 2 * self.mpol),
+            3 + 2 * self.mpol
         )
         return X
 
