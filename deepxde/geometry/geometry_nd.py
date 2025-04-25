@@ -364,7 +364,7 @@ class HyperFourierEllipse(Geometry):
         Rm_grid = Rm
         Zm_grid = Zm
 
-        shape = (self.N,) + (self.num_param,) * (mpol*2)  # (100, 4, 4, 4, 4)
+        shape = (self.N,) + (self.num_param,) * (mpol*2+1)  # (100, 4, 4, 4, 4)
         R_ellipse = np.ones(shape)
         Z_ellipse = np.ones(shape)
         A_ellipse = np.ones(shape)
@@ -397,8 +397,8 @@ class HyperFourierEllipse(Geometry):
         # 100: number of points in tau
         # 4, 4, 4, 4: parameter dimensions
         # 3: Fourier modes (m=0,1,2)
-        Rm_grid = np.stack([R0] + Rm_coeffs, axis=-1)  
-        Zm_grid = np.stack([Z0] + Zm_coeffs, axis=-1)
+        Rm_grid = np.stack([R0] + Rm_coeffs, axis=-1)  # delete the first dimension
+        Zm_grid = np.stack([Z0] + Zm_coeffs, axis=-1)  # delete the first dimension
 
 
         # Create indices for all combinations instead of using nested loops
@@ -420,7 +420,7 @@ class HyperFourierEllipse(Geometry):
 
 
         # Store the components
-        self.R_ellipse = R_ellipse
+        self.R_ellipse = R_ellipse + np.ones(R_ellipse.shape)
         self.Z_ellipse = Z_ellipse
         self.A_ellipse = A_ellipse
         self.Rm_ellipse = Rm_grid
