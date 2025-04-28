@@ -119,9 +119,7 @@ def gen_traindata(num):
                         [comp for comp in Rm_components] + 
                         [comp for comp in Zm_components], axis=-1)
 
-    # x_ellipse = x_ellipse.reshape(self.N * self.num_param ** (1 + 2 * mpol), 4 + 2 * mpol)
-
-
+    x_ellipse = x_ellipse.reshape(N * num_param ** (1 + 2 * mpol), 3 + 2 * mpol)
 
     uvals = np.zeros(len(x_ellipse)).reshape(len(x_ellipse), 1)
     return x_ellipse, uvals
@@ -155,6 +153,8 @@ print('Done with initializing geometry')
 
 x, u = gen_traindata(100)
 print('Done with initializing train data')
+# print("x.shape", x.shape)  # (102400, 7)
+# print("u.shape", u.shape)  # (102400, 1)
 
 n_test = 100
 

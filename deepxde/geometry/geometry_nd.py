@@ -443,7 +443,7 @@ class HyperFourierEllipse(Geometry):
                          [comp for comp in Rm_components] + 
                          [comp for comp in Zm_components], axis=-1)
 
-        # x_ellipse = x_ellipse.reshape(self.N * self.num_param ** (1 + 2 * mpol), 4 + 2 * mpol)
+        x_ellipse = x_ellipse.reshape(self.N * self.num_param ** (1 + 2 * mpol), 3 + 2 * mpol)
 
         self.x_ellipse = x_ellipse
 
@@ -574,6 +574,7 @@ class HyperFourierEllipse(Geometry):
                          [comp for comp in Rm_components] + 
                          [comp for comp in Zm_components], axis=-1)
 
+        x_ellipse = x_ellipse.reshape(self.N * self.num_param ** (1 + 2 * mpol), 3 + 2 * mpol)
 
         return x_ellipse
 
