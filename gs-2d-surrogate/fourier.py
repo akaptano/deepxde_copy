@@ -21,6 +21,10 @@ import deepxde as dde
 print("Using DeepXDE from:", dde.__file__)
 sys.path.append('/scratch/yx3044/Projects/deepxde_copy/gs-2d-surrogate')
 
+import tensorflow as tf
+tf.config.optimizer.set_jit(True)  # Enable XLA compilation
+print(tf.config.list_physical_devices('GPU'))
+
 from utils.gs_solovev_sol import GS_Linear
 
 
@@ -199,6 +203,7 @@ ax.set_xlabel('R/R_0')
 ax.set_ylabel(r'$u(r,z=0)$')
 plt.show()
 
+# %%
 
 
 import time
@@ -235,9 +240,12 @@ for i in range(1):
       train_state, 
       issave=True, 
       isplot=True,
-      output_dir=PATH
+      output_dir=PATH,
+      output_fname="loss_history_adam"
   )
 
+
+# %%
 
 
 # AFTER BFGS
@@ -253,12 +261,16 @@ dde.saveplot(
     train_state, 
     issave=True, 
     isplot=True,
-    output_dir=PATH
+    output_dir=PATH,
+    output_fname="loss_history_bfgs"
 )
 
 
+# %%
+
 # Evaluation
 from utils.utils import *
+
 ITER = GS_Linear(eps=eps[0], kappa=kappa[0], delta=delta[0])
 xfull, yfull, psi_pred_full, psi_true_full, error = evaluate(
     ITER, model, 
@@ -288,7 +300,6 @@ for i in range(num_param):
 
 
 
-#failed here
 
 
 # Plotting Setup
