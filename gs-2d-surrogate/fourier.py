@@ -178,34 +178,6 @@ data = dde.data.PDE(
 
 # %%
 
-print(spatial_domain.R_ellipse.shape)
-plt.scatter(spatial_domain.R_ellipse[:, 0, :, :, :, 0], 
-            spatial_domain.Z_ellipse[:, 0, :, :, :, 0])
-
-#### ISSUE is that Rm and Zm sums over m are incorrect... need
-# to multiply m by the correct Rm and sum...
-
-
-# Plot collocation points for visual check
-# %matplotlib
-
-fig,ax=plt.subplots(1, figsize=(5,5))
-ax.scatter(data.train_x_bc[:,0], data.train_x_bc[:,1], s = 2, color='r')
-ax.set_title('Collocation Points')
-ax.set_xlabel('R/R_0')
-ax.set_ylabel(r'$u(r,z=0)$')
-
-fig =plt.figure(2, figsize=(5,5))
-ax = fig.add_subplot(projection='3d')
-ax.scatter(data.train_x[:,0], data.train_x[:,1], data.train_x[:,2], s = 2, color='b')
-ax.set_title('Collocation Points')
-ax.set_xlabel('R/R_0')
-ax.set_ylabel(r'$u(r,z=0)$')
-plt.show()
-
-# %%
-
-
 import time
 DATE = time.strftime("%m%d%Y_%H%M")
 CONFIG = "ITER"
@@ -223,6 +195,41 @@ if not isExist:
   # Create a new directory because it does not exist 
   os.makedirs(PATH)
   print("The new directory is created!")
+
+
+
+print(spatial_domain.R_ellipse.shape)
+plt.figure(1)
+plt.scatter(spatial_domain.R_ellipse[:, 0, :, :, :, 0], 
+            spatial_domain.Z_ellipse[:, 0, :, :, :, 0])
+
+#### ISSUE is that Rm and Zm sums over m are incorrect... need
+# to multiply m by the correct Rm and sum...
+
+
+# Plot collocation points for visual check
+# matplotlib
+
+fig,ax=plt.subplots(1, figsize=(5,5))
+ax.scatter(data.train_x_bc[:,0], data.train_x_bc[:,1], s = 2, color='r')
+ax.set_title('Collocation Points')
+ax.set_xlabel('R/R_0')
+ax.set_ylabel(r'$u(r,z=0)$')
+plt.savefig(os.path.join(PATH, 'collocation_points_2d.png'))
+plt.close()
+
+fig = plt.figure(2, figsize=(5,5))
+ax = fig.add_subplot(projection='3d')
+ax.scatter(data.train_x[:,0], data.train_x[:,1], data.train_x[:,2], s = 2, color='b')
+ax.set_title('Collocation Points')
+ax.set_xlabel('R/R_0')
+ax.set_ylabel(r'$u(r,z=0)$')
+plt.savefig(os.path.join(PATH, 'collocation_points_3d.png'))
+plt.close()
+
+# %%
+
+
 
 net = dde.maps.FNN([3 + 2 * mpol] + DEPTH * [BREADTH] + [1], AF, "Glorot normal")
 
