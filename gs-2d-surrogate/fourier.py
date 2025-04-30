@@ -84,7 +84,6 @@ def gen_traindata(num):
         Rm_coeffs.append(Rm_m)
         Zm_coeffs.append(Zm_m)
 
-
     # Stack all coefficients together
     # shape for Rm_grid: (100, 4, 4, 4, 4, 4, 2)
     # 100: number of points in tau
@@ -108,7 +107,8 @@ def gen_traindata(num):
         Z_ellipse[slc] = np.sum([np.multiply(Zm_grid[slc][:, m], np.sin(m * tau)) for m in range(1, Zm_grid.shape[-1])], axis=0) 
         A_ellipse[slc] = Arange[idx[0]]
 
-
+    
+    R_ellipse = R_ellipse + np.ones_like(R_ellipse)
 
     # x_ellipse = np.concatenate([R_ellipse, Z_ellipse, A_ellipse], axis=-1)  # we don't need this?
 
@@ -202,9 +202,8 @@ print(spatial_domain.R_ellipse.shape)
 plt.figure(1)
 plt.scatter(spatial_domain.R_ellipse[:, 0, :, :, :, 0], 
             spatial_domain.Z_ellipse[:, 0, :, :, :, 0])
-
-#### ISSUE is that Rm and Zm sums over m are incorrect... need
-# to multiply m by the correct Rm and sum...
+plt.savefig(os.path.join(PATH, 'boundary_points.png'))
+plt.close()
 
 
 # Plot collocation points for visual check
@@ -257,26 +256,37 @@ for i in range(1):
 
 # AFTER BFGS
 
-# Compile, train and save model
-model.compile(
-    "L-BFGS-B", 
-    loss_weights=[1,100]
-)
-loss_history, train_state = model.train(epochs=1000, display_every = 10)
-dde.saveplot(
-    loss_history, 
-    train_state, 
-    issave=True, 
-    isplot=True,
-    output_dir=PATH,
-    output_fname="loss_history_bfgs"
-)
+# # Compile, train and save model
+# model.compile(
+#     "L-BFGS-B", 
+#     loss_weights=[1,100]
+# )
+# loss_history, train_state = model.train(epochs=1000, display_every = 10)
+# dde.saveplot(
+#     loss_history, 
+#     train_state, 
+#     issave=True, 
+#     isplot=True,
+#     output_dir=PATH,
+#     output_fname="loss_history_bfgs"
+# )
 
 
 # %%
 
 # Evaluation
 from utils.utils import *
+
+eps_deviation = 0.2
+kappa_deviation = 0.75
+delta_deviation = 0.5
+eps0 = (0.32 - eps_deviation, 0.32 + eps_deviation)
+kappa0 = (2 - kappa_deviation, 2 + kappa_deviation)
+delta0 = (0 - delta_deviation, 0 + delta_deviation)
+
+eps = np.linspace(eps0[0], eps0[1], num_param)
+kappa = np.linspace(kappa0[0], kappa0[1], num_param)
+delta = np.linspace(delta0[0], delta0[1], num_param)
 
 ITER = GS_Linear(eps=eps[0], kappa=kappa[0], delta=delta[0])
 xfull, yfull, psi_pred_full, psi_true_full, error = evaluate(
