@@ -103,8 +103,8 @@ def gen_traindata(num):
 
     for idx in indices:
         slc = (slice(None),) + tuple(idx)
-        R_ellipse[slc] = np.sum([np.multiply(Rm_grid[slc][:, m], np.cos(m * tau)) for m in range(1, Rm_grid.shape[-1])], axis=0) 
-        Z_ellipse[slc] = np.sum([np.multiply(Zm_grid[slc][:, m], np.sin(m * tau)) for m in range(1, Zm_grid.shape[-1])], axis=0) 
+        R_ellipse[slc] = np.sum([np.multiply(Rm_grid[slc][:, m-1], np.cos(m * tau)) for m in range(1, Rm_grid.shape[-1])], axis=0) 
+        Z_ellipse[slc] = np.sum([np.multiply(Zm_grid[slc][:, m-1], np.sin(m * tau)) for m in range(1, Zm_grid.shape[-1])], axis=0) 
         A_ellipse[slc] = Arange[idx[0]]
 
     
@@ -162,17 +162,20 @@ print('Done with initializing train data')
 
 n_test = 100
 
+# I am guessing this is the hard constraint?
 bc135 = dde.PointSetBC(x,u)
 print('Done with BC')
+
+print(len(x))
 
 data = dde.data.PDE(
     spatial_domain,
     pde_solovev,
     [bc135],
     num_domain=1000,
-    num_boundary=0,
+    num_boundary=100,
     num_test=n_test,
-    train_distribution="LHS"
+    train_distribution="uniform"
 )
 
 

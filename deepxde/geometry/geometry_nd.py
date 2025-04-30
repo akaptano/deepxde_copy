@@ -345,6 +345,9 @@ class HyperFourierEllipse(Geometry):
         self.tau = np.linspace(0, 2 * np.pi, self.N)  # values for theta
         self.minor_radius = minor_radius  
         self.mpol = mpol  # number of Fourier modes
+        self.Amax = Amax
+        self.RZm_max = RZm_max
+
 
         # begin with perfectly circular cross-section
         self.center = np.zeros((self.num_dims))     # center of the ellipse, should have the same number of dimensions as self.num_dims
@@ -367,9 +370,6 @@ class HyperFourierEllipse(Geometry):
         R_ellipse = np.ones(shape)
         Z_ellipse = np.ones(shape)
         A_ellipse = np.ones(shape)
-        Rm_ellipse = np.ones(shape)
-        Zm_ellipse = np.ones(shape)
-
 
         # We have to handle Rm and Zm first, so that we can calculate R_ellipse and Z_ellipse using them
 
@@ -422,9 +422,10 @@ class HyperFourierEllipse(Geometry):
             A_ellipse[slc] = Arange[idx[0]]
 
 
+        R_ellipse = R_ellipse + np.ones_like(R_ellipse)
 
         # Store the components
-        self.R_ellipse = R_ellipse + np.ones_like(R_ellipse)
+        self.R_ellipse = R_ellipse
         self.Z_ellipse = Z_ellipse
         self.A_ellipse = A_ellipse
         self.Rm_ellipse = Rm_grid
@@ -497,7 +498,87 @@ class HyperFourierEllipse(Geometry):
 
     def uniform_boundary_points(self, n):   # the parameter n seems to be unused??
         # The init function alreay is a uniform initialization of R, Z, A, and the Fourier coefficients Rm, Zm
-        return copy.deepcopy(self.x_ellipse)        # do we need to deepcopy?
+        print("YEEEEEEEEEES")
+
+        self.N = n  # number of collocation points on the boundary?????
+
+        # begin with perfectly circular cross-section
+        self.center = np.zeros((self.num_dims))     # center of the ellipse, should have the same number of dimensions as self.num_dims
+
+
+        # This is a uniform initialization of R, Z, A, and the Fourier coefficients Rm, Zm
+        # Define x_ellipse as a holder for [R, Z, A, Rm, Zm], 
+        # where dimensions of Rm and Zm depends on mpol
+        # This is what we want to plug into x_ellipse
+        x_ellipse = []
+
+        Arange = np.linspace(-self.Amax, self.Amax, self.num_param)  # range of A 
+        Rm = np.linspace(-self.RZm_max, self.RZm_max, self.num_param)  # range of Rm
+        Zm = np.linspace(-self.RZm_max, self.RZm_max, self.num_param)  # range of Zm
+
+        Rm_grid = Rm
+        Zm_grid = Zm
+
+        shape = (self.N,) + (self.num_param,) * (self.mpol*2+1)  # (100, 4, 4, 4, 4, 4)
+        R_ellipse = np.ones(shape)
+        Z_ellipse = np.ones(shape)
+        A_ellipse = np.ones(shape)
+
+        # We have to handle Rm and Zm first, so that we can calculate R_ellipse and Z_ellipse using them
+
+        # Initialize base arrays for Fourier coefficients
+        # R0 is 1 (nonzero) and Z0 is 0 for the base circular shape
+        R0 = np.ones(shape)  # R0 coefficient is 1 for circular base shape
+        Z0 = np.zeros(shape) # Z0 coefficient is 0 for circular base shape
+
+        # Initialize arrays for higher order Fourier coefficients
+        Rm_coeffs = []
+        Zm_coeffs = []
+        
+        # For each Fourier mode m, create coefficient arrays
+        for m in range(1, self.mpol + 1):
+            # Create coefficient arrays with proper shape
+            Rm_m = np.ones(shape) * Rm_grid
+            Zm_m = np.ones(shape) * Zm_grid
+            Rm_coeffs.append(Rm_m)
+            Zm_coeffs.append(Zm_m)
+
+
+        Rm_grid = np.stack(Rm_coeffs, axis=-1)
+        Zm_grid = np.stack(Zm_coeffs, axis=-1)
+
+
+        indices = np.indices((self.num_param,) * (self.mpol*2+1)).reshape(self.mpol*2+1, -1).T
+
+        # Now we can calculate R_ellipse and Z_ellipse using the indices
+
+        for idx in indices:
+            slc = (slice(None),) + tuple(idx)
+            R_ellipse[slc] = np.sum([np.multiply(Rm_grid[slc][:, m-1], np.cos(m * self.tau)) for m in range(1, Rm_grid.shape[-1])], axis=0) 
+            Z_ellipse[slc] = np.sum([np.multiply(Zm_grid[slc][:, m-1], np.sin(m * self.tau)) for m in range(1, Zm_grid.shape[-1])], axis=0) 
+            A_ellipse[slc] = Arange[idx[0]]
+
+        R_ellipse = R_ellipse + np.ones_like(R_ellipse)
+
+        # Store the components
+        self.R_ellipse = R_ellipse
+        self.Z_ellipse = Z_ellipse
+        self.A_ellipse = A_ellipse
+        self.Rm_ellipse = Rm_grid
+        self.Zm_ellipse = Zm_grid
+
+        Rm_components = np.moveaxis(Rm_grid, -1, 0)  # Move last axis to first, shape: (mpol+1, 100, 4, 4, 4, 4, 4)
+        Zm_components = np.moveaxis(Zm_grid, -1, 0)  # Move last axis to first, shape: (mpol+1, 100, 4, 4, 4, 4, 4)
+
+
+        x_ellipse = np.stack([R_ellipse, Z_ellipse, A_ellipse] + 
+                         [comp for comp in Rm_components] + 
+                         [comp for comp in Zm_components], axis=-1)
+
+        x_ellipse = x_ellipse.reshape(self.N * self.num_param ** (1 + 2 * self.mpol), 3 + 2 * self.mpol)
+        
+
+        return x_ellipse
 
     def random_boundary_points(self, n, random="pseudo"):
         # sample(n_samples, dimension, "something") returns an array of shape (n_samples, dimension)
@@ -510,7 +591,7 @@ class HyperFourierEllipse(Geometry):
         Rm_grid = Rm
         Zm_grid = Zm
 
-        shape = (self.N,) + (self.num_param,) * (mpol*2+1)  # (100, 4, 4, 4, 4, 4)
+        shape = (self.N,) + (self.num_param,) * (self.mpol*2+1)  # (100, 4, 4, 4, 4, 4)
         R_ellipse = np.ones(shape)
         Z_ellipse = np.ones(shape)
         A_ellipse = np.ones(shape)
@@ -530,7 +611,7 @@ class HyperFourierEllipse(Geometry):
         Zm_coeffs = []
         
         # For each Fourier mode m, create coefficient arrays
-        for m in range(1, mpol + 1):
+        for m in range(1, self.mpol + 1):
             # Create coefficient arrays with proper shape
             Rm_m = np.ones(shape) * Rm_grid
             Zm_m = np.ones(shape) * Zm_grid
@@ -544,7 +625,7 @@ class HyperFourierEllipse(Geometry):
 
         # Create indices for all combinations instead of using nested loops
         # mpol*2+1 is the number for parameters A, Rm, Zm
-        indices = np.indices((self.num_param,) * (mpol*2+1)).reshape(mpol*2+1, -1).T
+        indices = np.indices((self.num_param,) * (self.mpol*2+1)).reshape(self.mpol*2+1, -1).T
         # print("indices.shape", indices.shape)  # (1024, 5) = (4^5, 5)
 
         # Now we can calculate R_ellipse and Z_ellipse using the indices
@@ -555,10 +636,10 @@ class HyperFourierEllipse(Geometry):
             Z_ellipse[slc] = np.sum([np.multiply(Zm_grid[slc][:, m], np.sin(m * self.tau)) for m in range(1, Zm_grid.shape[-1])], axis=0) 
             A_ellipse[slc] = Arange[idx[0]]
 
-
+        R_ellipse = R_ellipse + np.ones_like(R_ellipse)
 
         # Store the components
-        self.R_ellipse = R_ellipse + np.ones_like(R_ellipse)
+        self.R_ellipse = R_ellipse
         self.Z_ellipse = Z_ellipse
         self.A_ellipse = A_ellipse
         self.Rm_ellipse = Rm_grid
@@ -574,7 +655,7 @@ class HyperFourierEllipse(Geometry):
                          [comp for comp in Rm_components] + 
                          [comp for comp in Zm_components], axis=-1)
 
-        x_ellipse = x_ellipse.reshape(self.N * self.num_param ** (1 + 2 * mpol), 3 + 2 * mpol)
+        x_ellipse = x_ellipse.reshape(self.N * self.num_param ** (1 + 2 * self.mpol), 3 + 2 * self.mpol)
 
         return x_ellipse
 
