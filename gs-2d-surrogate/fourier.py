@@ -31,7 +31,7 @@ from utils.gs_solovev_sol import GS_Linear
 
 # Initialize parameters with appropriate ranges
 Amax = 0.1      # the maximum value of A
-num_param = 4
+num_param = 1
 Arange = np.linspace(-Amax, Amax, num_param)
 mpol = 2
 RZm_max = 0.3
@@ -44,6 +44,9 @@ minor_radius = 0.5
 
 # data types of variables: float64
 
+
+# major radius R0
+# minor radius is R1 and Z1
 
 def gen_traindata(num):
     N = num
@@ -58,19 +61,21 @@ def gen_traindata(num):
     Zm_grid = Zm
 
     shape = (N,) + (num_param,) * (mpol*2+1)  # (100, 4, 4, 4, 4, 4)
-    R_ellipse = np.ones(shape)
-    Z_ellipse = np.ones(shape)
+    R_ellipse = np.ones(shape) 
+    Z_ellipse = np.ones(shape) 
     A_ellipse = np.ones(shape)
-    Rm_ellipse = np.ones(shape)
-    Zm_ellipse = np.ones(shape)
+    # R_ellipse = np.ones(shape) * minor_radius
+    # Z_ellipse = np.ones(shape) * minor_radius
+    # A_ellipse = np.ones(shape) * minor_radius
+
 
 
     # We have to handle Rm and Zm first, so that we can calculate R_ellipse and Z_ellipse using them
 
     # Initialize base arrays for Fourier coefficients
     # R0 is 1 (nonzero) and Z0 is 0 for the base circular shape
-    R0 = np.ones(shape)  # R0 coefficient is 1 for circular base shape
-    Z0 = np.zeros(shape) # Z0 coefficient is 0 for circular base shape
+    R0 = np.ones(shape) * minor_radius  # R0 coefficient is 1 for circular base shape
+    Z0 = np.zeros(shape) * minor_radius # Z0 coefficient is 0 for circular base shape
 
     # Initialize arrays for higher order Fourier coefficients
     Rm_coeffs = []
@@ -81,6 +86,8 @@ def gen_traindata(num):
         # Create coefficient arrays with proper shape
         Rm_m = np.ones(shape) * Rm_grid
         Zm_m = np.ones(shape) * Zm_grid
+        # Rm_m = np.ones(shape) * minor_radius * Rm_grid
+        # Zm_m = np.ones(shape) * minor_radius * Zm_grid
         Rm_coeffs.append(Rm_m)
         Zm_coeffs.append(Zm_m)
 
@@ -92,6 +99,7 @@ def gen_traindata(num):
     # We want to fix the first element R0 as ones and Z0 as zeros
     Rm_grid = np.stack(Rm_coeffs, axis=-1)
     Zm_grid = np.stack(Zm_coeffs, axis=-1)
+
 
 
     # Create indices for all combinations instead of using nested loops
@@ -126,6 +134,7 @@ def gen_traindata(num):
     x_ellipse = x_ellipse.reshape(N * num_param ** (1 + 2 * mpol), 3 + 2 * mpol)
 
     uvals = np.zeros(len(x_ellipse)).reshape(len(x_ellipse), 1)
+
     return x_ellipse, uvals
 
 
@@ -155,10 +164,44 @@ spatial_domain = dde.geometry.HyperFourierEllipse(
 ) 
 print('Done with initializing geometry')
 
+
 x, u = gen_traindata(100)
 print('Done with initializing train data')
 # print("x.shape", x.shape)  # (102400, 7)
 # print("u.shape", u.shape)  # (102400, 1)
+
+
+
+# Visualize boundary points
+import matplotlib.pyplot as plt
+
+# Extract R and Z coordinates from boundary points
+R_coords = x[:, 0]  # First column is R
+Z_coords = x[:, 1]  # Second column is Z
+
+plt.figure(figsize=(10, 10))
+plt.scatter(R_coords, Z_coords, c='blue', s=1, alpha=0.5)
+plt.title('Boundary Points Distribution')
+plt.xlabel('R')
+plt.ylabel('Z')
+plt.axis('equal')  # Equal aspect ratio
+plt.grid(True)
+
+# Add a point at (1,0) to show the major radius reference
+plt.plot(1, 0, 'r*', markersize=10, label='Major Radius')
+plt.legend()
+
+# Save the plot
+plt.savefig(f'./fourier_boundary_points.png', dpi=300, bbox_inches='tight')
+plt.close()
+
+print(f"Boundary points plot saved to ./fourier_boundary_points.png")
+
+
+
+
+
+
 
 n_test = 100
 
@@ -172,11 +215,13 @@ data = dde.data.PDE(
     spatial_domain,
     pde_solovev,
     [bc135],
-    num_domain=1000,
-    num_boundary=100,
+    num_domain=20,  # 1000
+    num_boundary=0,
     num_test=n_test,
-    train_distribution="uniform"
+    train_distribution="random"
 )
+
+print("Done with data")
 
 
 # %%
@@ -259,20 +304,20 @@ for i in range(1):
 
 # AFTER BFGS
 
-# # Compile, train and save model
-# model.compile(
-#     "L-BFGS-B", 
-#     loss_weights=[1,100]
-# )
-# loss_history, train_state = model.train(epochs=1000, display_every = 10)
-# dde.saveplot(
-#     loss_history, 
-#     train_state, 
-#     issave=True, 
-#     isplot=True,
-#     output_dir=PATH,
-#     output_fname="loss_history_bfgs"
-# )
+# Compile, train and save model
+model.compile(
+    "L-BFGS-B", 
+    loss_weights=[1,100]
+)
+loss_history, train_state = model.train(epochs=1000, display_every = 10)
+dde.saveplot(
+    loss_history, 
+    train_state, 
+    issave=True, 
+    isplot=True,
+    output_dir=PATH,
+    output_fname="loss_history_bfgs"
+)
 
 
 # %%

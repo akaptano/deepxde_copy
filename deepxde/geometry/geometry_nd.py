@@ -3,7 +3,6 @@ import itertools
 import numpy as np
 from scipy import stats
 from sklearn import preprocessing
-
 from .geometry import Geometry
 from .sampler import sample
 from .. import config
@@ -359,9 +358,9 @@ class HyperFourierEllipse(Geometry):
         # This is what we want to plug into x_ellipse
         x_ellipse = []
 
-        Arange = np.linspace(-Amax, Amax, self.num_param)  # range of A 
-        Rm = np.linspace(-RZm_max, RZm_max, self.num_param)  # range of Rm
-        Zm = np.linspace(-RZm_max, RZm_max, self.num_param)  # range of Zm
+        Arange = np.linspace(-self.Amax, self.Amax, self.num_param)  # range of A 
+        Rm = np.linspace(-self.RZm_max, self.RZm_max, self.num_param)  # range of Rm
+        Zm = np.linspace(-self.RZm_max, self.RZm_max, self.num_param)  # range of Zm
 
         Rm_grid = Rm
         Zm_grid = Zm
@@ -370,13 +369,16 @@ class HyperFourierEllipse(Geometry):
         R_ellipse = np.ones(shape)
         Z_ellipse = np.ones(shape)
         A_ellipse = np.ones(shape)
+        # R_ellipse = np.ones(shape) * self.minor_radius
+        # Z_ellipse = np.ones(shape) * self.minor_radius
+        # A_ellipse = np.ones(shape) * self.minor_radius
 
         # We have to handle Rm and Zm first, so that we can calculate R_ellipse and Z_ellipse using them
 
         # Initialize base arrays for Fourier coefficients
         # R0 is 1 (nonzero) and Z0 is 0 for the base circular shape
-        R0 = np.ones(shape)  # R0 coefficient is 1 for circular base shape
-        Z0 = np.zeros(shape) # Z0 coefficient is 0 for circular base shape
+        R0 = np.ones(shape) * self.minor_radius  # R0 coefficient is 1 for circular base shape
+        Z0 = np.zeros(shape) * self.minor_radius # Z0 coefficient is 0 for circular base shape
 
         # Initialize arrays for higher order Fourier coefficients
         Rm_coeffs = []
@@ -387,6 +389,8 @@ class HyperFourierEllipse(Geometry):
             # Create coefficient arrays with proper shape
             Rm_m = np.ones(shape) * Rm_grid
             Zm_m = np.ones(shape) * Zm_grid
+            # Rm_m = np.ones(shape) * self.minor_radius * Rm_grid
+            # Zm_m = np.ones(shape) * self.minor_radius * Zm_grid
             Rm_coeffs.append(Rm_m)
             Zm_coeffs.append(Zm_m)
 
@@ -396,7 +400,7 @@ class HyperFourierEllipse(Geometry):
         # 100: number of points in tau
         # 4, 4, 4, 4, 4: parameter dimensions (5 trainable variables, with 4 instances for each)
         # 2: Fourier modes (m=1,2)
-        # We want to fix the first element R0 as ones and Z0 as zeros
+        # We want to fix the first element R0 as SELF.minor_radius and Z0 as zeros
         # Rm_grid = np.stack([R0] + Rm_coeffs, axis=-1)  # delete the first dimension
         # Zm_grid = np.stack([Z0] + Zm_coeffs, axis=-1)  # delete the first dimension
         Rm_grid = np.stack(Rm_coeffs, axis=-1)
@@ -406,7 +410,7 @@ class HyperFourierEllipse(Geometry):
         # Create indices for all combinations instead of using nested loops
         # mpol*2+1 is the number for parameters A, Rm, Zm
         indices = np.indices((self.num_param,) * (mpol*2+1)).reshape(mpol*2+1, -1).T
-        print("indices.shape", indices.shape)  # (1024, 5) = (4^5, 5)
+        # print("indices.shape", indices.shape)  # (1024, 5) = (4^5, 5)
 
         # Now we can calculate R_ellipse and Z_ellipse using the indices
 
@@ -422,7 +426,7 @@ class HyperFourierEllipse(Geometry):
             A_ellipse[slc] = Arange[idx[0]]
 
 
-        R_ellipse = R_ellipse + np.ones_like(R_ellipse)
+        R_ellipse = R_ellipse + np.ones_like(R_ellipse) * self.minor_radius
 
         # Store the components
         self.R_ellipse = R_ellipse
@@ -431,7 +435,6 @@ class HyperFourierEllipse(Geometry):
         self.Rm_ellipse = Rm_grid
         self.Zm_ellipse = Zm_grid
 
-        # x_ellipse = np.concatenate([R_ellipse, Z_ellipse, A_ellipse], axis=-1)  # we don't need this?
 
         # Split Rm_grid and Zm_grid along last axis dynamically
         Rm_components = np.moveaxis(Rm_grid, -1, 0)  # Move last axis to first, shape: (mpol+1, 100, 4, 4, 4, 4, 4)
@@ -440,38 +443,40 @@ class HyperFourierEllipse(Geometry):
 
         # Combine R_ellipse, Z_ellipse, A_ellipse, Rm_components and Zm_components 
         # x_ellipse has shape (100, 4, 4, 4, 4, 4, 7)
-        x_ellipse = np.stack([R_ellipse, Z_ellipse, A_ellipse] + 
+        x_ellipse = np.stack([self.R_ellipse, self.Z_ellipse, self.A_ellipse] + 
                          [comp for comp in Rm_components] + 
                          [comp for comp in Zm_components], axis=-1)
 
-        x_ellipse = x_ellipse.reshape(self.N * self.num_param ** (1 + 2 * mpol), 3 + 2 * mpol)
+        x_ellipse = x_ellipse.reshape(self.N * self.num_param ** (1 + 2 * self.mpol), 3 + 2 * self.mpol)
 
         self.x_ellipse = x_ellipse
 
 
         # setting xmin and xmax for bounding box
         self.xmin = np.array([
-            1 - self.minor_radius - RZm_max,
-            -1 - RZm_max - self.minor_radius,
-            -Amax])
+            1 - self.minor_radius - self.RZm_max,
+            -1 - self.RZm_max - self.minor_radius,
+            -self.Amax])
         self.xmax = np.array([
-            1 + self.minor_radius + RZm_max,
-            1 + RZm_max + self.minor_radius,
-            Amax])
+            1 + self.minor_radius + self.RZm_max,
+            1 + self.RZm_max + self.minor_radius,
+            self.Amax])
+
 
         # Add bounds for Fourier coefficients
         for m in range(2 * mpol):
-            self.xmin = np.concatenate((self.xmin, [-RZm_max]))
-            self.xmax = np.concatenate((self.xmax, [RZm_max]))
+            self.xmin = np.concatenate((self.xmin, [-self.RZm_max]))
+            self.xmax = np.concatenate((self.xmax, [self.RZm_max]))
 
-        self.Amax = Amax
-        self.RZm_max = RZm_max
 
         super(HyperFourierEllipse, self).__init__(4 + 2 * mpol, (self.xmin, self.xmax), 1)
 
+
+    # change this!
     def inside(self, x):
-        return (np.sqrt((x[:, 0:1] - 1.0) ** 2 + x[:, 1:2] ** 2) < self.minor_radius)
-        # return is_point_in_path(x[:, 0:1], x[:, 1:2], self.x_ellipse)
+        # print("x.shape", x.shape)   # x.shape (1, 7)
+        # return (np.sqrt((x[:, 0:1] - 1.0) ** 2 + x[:, 1:2] ** 2) < self.minor_radius)
+        return is_point_in_path_fourier(x[:, 0:1], x[:, 1:2], self.x_ellipse)
 
     def on_boundary(self, x):
         # This is not finding the distance of 2d points. Only for 1d does this work.
@@ -488,6 +493,7 @@ class HyperFourierEllipse(Geometry):
         # or np.allclose(abs(abs_diff[:, 2:3]), self.Amax)
 
     def random_points(self, n, random="pseudo"):
+        print("RANDOM POINTS")
         x = []
         vbbox = self.xmax - self.xmin
         while len(x) < n:
@@ -498,7 +504,7 @@ class HyperFourierEllipse(Geometry):
 
     def uniform_boundary_points(self, n):   # the parameter n seems to be unused??
         # The init function alreay is a uniform initialization of R, Z, A, and the Fourier coefficients Rm, Zm
-        print("YEEEEEEEEEES")
+        print("UNIFORM BOUNDARY POINTS")
 
         self.N = n  # number of collocation points on the boundary?????
 
@@ -520,16 +526,16 @@ class HyperFourierEllipse(Geometry):
         Zm_grid = Zm
 
         shape = (self.N,) + (self.num_param,) * (self.mpol*2+1)  # (100, 4, 4, 4, 4, 4)
-        R_ellipse = np.ones(shape)
-        Z_ellipse = np.ones(shape)
-        A_ellipse = np.ones(shape)
+        R_ellipse = np.ones(shape) * self.minor_radius
+        Z_ellipse = np.ones(shape) * self.minor_radius
+        A_ellipse = np.ones(shape) * self.minor_radius
 
         # We have to handle Rm and Zm first, so that we can calculate R_ellipse and Z_ellipse using them
 
         # Initialize base arrays for Fourier coefficients
         # R0 is 1 (nonzero) and Z0 is 0 for the base circular shape
-        R0 = np.ones(shape)  # R0 coefficient is 1 for circular base shape
-        Z0 = np.zeros(shape) # Z0 coefficient is 0 for circular base shape
+        R0 = np.ones(shape) * self.minor_radius  # R0 coefficient is 1 for circular base shape
+        Z0 = np.zeros(shape) * self.minor_radius # Z0 coefficient is 0 for circular base shape
 
         # Initialize arrays for higher order Fourier coefficients
         Rm_coeffs = []
@@ -538,8 +544,8 @@ class HyperFourierEllipse(Geometry):
         # For each Fourier mode m, create coefficient arrays
         for m in range(1, self.mpol + 1):
             # Create coefficient arrays with proper shape
-            Rm_m = np.ones(shape) * Rm_grid
-            Zm_m = np.ones(shape) * Zm_grid
+            Rm_m = np.ones(shape) * self.minor_radius * Rm_grid
+            Zm_m = np.ones(shape) * self.minor_radius * Zm_grid
             Rm_coeffs.append(Rm_m)
             Zm_coeffs.append(Zm_m)
 
@@ -558,7 +564,7 @@ class HyperFourierEllipse(Geometry):
             Z_ellipse[slc] = np.sum([np.multiply(Zm_grid[slc][:, m-1], np.sin(m * self.tau)) for m in range(1, Zm_grid.shape[-1])], axis=0) 
             A_ellipse[slc] = Arange[idx[0]]
 
-        R_ellipse = R_ellipse + np.ones_like(R_ellipse)
+        R_ellipse = R_ellipse + np.ones_like(R_ellipse) * self.minor_radius
 
         # Store the components
         self.R_ellipse = R_ellipse
@@ -592,19 +598,17 @@ class HyperFourierEllipse(Geometry):
         Zm_grid = Zm
 
         shape = (self.N,) + (self.num_param,) * (self.mpol*2+1)  # (100, 4, 4, 4, 4, 4)
-        R_ellipse = np.ones(shape)
-        Z_ellipse = np.ones(shape)
-        A_ellipse = np.ones(shape)
-        Rm_ellipse = np.ones(shape)
-        Zm_ellipse = np.ones(shape)
+        R_ellipse = np.ones(shape) * self.minor_radius
+        Z_ellipse = np.ones(shape) * self.minor_radius
+        A_ellipse = np.ones(shape) * self.minor_radius
 
 
         # We have to handle Rm and Zm first, so that we can calculate R_ellipse and Z_ellipse using them
 
         # Initialize base arrays for Fourier coefficients
         # R0 is 1 (nonzero) and Z0 is 0 for the base circular shape
-        R0 = np.ones(shape)  # R0 coefficient is 1 for circular base shape
-        Z0 = np.zeros(shape) # Z0 coefficient is 0 for circular base shape
+        R0 = np.ones(shape) * self.minor_radius  # R0 coefficient is 1 for circular base shape
+        Z0 = np.zeros(shape) * self.minor_radius # Z0 coefficient is 0 for circular base shape
 
         # Initialize arrays for higher order Fourier coefficients
         Rm_coeffs = []
@@ -613,8 +617,8 @@ class HyperFourierEllipse(Geometry):
         # For each Fourier mode m, create coefficient arrays
         for m in range(1, self.mpol + 1):
             # Create coefficient arrays with proper shape
-            Rm_m = np.ones(shape) * Rm_grid
-            Zm_m = np.ones(shape) * Zm_grid
+            Rm_m = np.ones(shape) * self.minor_radius * Rm_grid
+            Zm_m = np.ones(shape) * self.minor_radius * Zm_grid
             Rm_coeffs.append(Rm_m)
             Zm_coeffs.append(Zm_m)
 
@@ -636,7 +640,7 @@ class HyperFourierEllipse(Geometry):
             Z_ellipse[slc] = np.sum([np.multiply(Zm_grid[slc][:, m], np.sin(m * self.tau)) for m in range(1, Zm_grid.shape[-1])], axis=0) 
             A_ellipse[slc] = Arange[idx[0]]
 
-        R_ellipse = R_ellipse + np.ones_like(R_ellipse)
+        R_ellipse = R_ellipse + np.ones_like(R_ellipse) * self.minor_radius
 
         # Store the components
         self.R_ellipse = R_ellipse
@@ -660,6 +664,11 @@ class HyperFourierEllipse(Geometry):
         return x_ellipse
 
 
+# Test if this works
+
+# This is the Ray casting algorithm
+# https://en.wikipedia.org/wiki/Point_in_polygon#:~:text=Ray%20casting%20algorithm,-See%20also%3A%20Jordan&text=The%20number%20of%20intersections%20for,also%20works%20in%20three%20dimensions.
+
 def is_point_in_path(x, y, poly) -> bool:
     num = len(poly)
     j = num - 1
@@ -679,3 +688,62 @@ def is_point_in_path(x, y, poly) -> bool:
                 c = not c
         j = i
     return c
+
+
+
+def is_point_in_path_fourier(x, y, boundary_points) -> bool:
+    """Determines if a point (x,y) is inside a boundary defined by Fourier series points.
+    Uses a vectorized ray casting algorithm for better efficiency.
+    
+    Args:
+        x: x-coordinate of the point to test
+        y: y-coordinate of the point to test 
+        boundary_points: Array of boundary points generated by Fourier series
+        
+    Returns:
+        bool: True if point is inside or on the boundary, False otherwise
+    """
+    # Convert inputs to numpy arrays if not already
+    x = np.asarray(x).reshape(-1)
+    y = np.asarray(y).reshape(-1)
+    
+    # Get next point indices (wrapping around to start)
+    next_idx = np.roll(np.arange(len(boundary_points)), -1)
+    
+    # Extract current and next point coordinates
+    y1 = boundary_points[:, 1]
+    y2 = boundary_points[next_idx, 1]
+    x1 = boundary_points[:, 0]
+    x2 = boundary_points[next_idx, 0]
+    
+    # Vectorized check for y-range
+    mask = ((y1 <= y) & (y2 > y)) | ((y2 <= y) & (y1 > y))
+    
+    # Calculate x-intersections where mask is True
+    x_ints = x1[mask] + (y - y1[mask]) * (x2[mask] - x1[mask]) / (y2[mask] - y1[mask])
+    
+    # Count intersections to the right of point x
+    num_intersections = np.sum(x_ints > x)
+
+    # print(f"Point ({x}, {y}): intersections = {num_intersections}")
+    
+    return (num_intersections % 2) == 1
+
+
+
+# # Test with a simple circle
+# theta = np.linspace(0, 2*np.pi, 100)
+# r = 1.0
+# boundary_points = np.column_stack((r*np.cos(theta), r*np.sin(theta)))
+
+# # Test points
+# test_points = [
+#     (0.0, 0.0),    # Inside
+#     (0.5, 0.5),    # Inside
+#     (2.0, 0.0),    # Outside
+#     (1.0, 0.0),    # On boundary
+# ]
+
+# for x, y in test_points:
+#     result = is_point_in_path_fourier(x, y, boundary_points)
+#     print(f"Point ({x}, {y}): {result}")
