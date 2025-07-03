@@ -12,7 +12,7 @@ import deepxde as dde
 print("Using DeepXDE from:", dde.__file__)
 sys.path.append('/scratch/yx3044/Projects/deepxde_copy/gs-2d-surrogate')
 import time
-
+import argparse
 
 from utils.utils import *
 from utils.gs_solovev_sol import GS_Linear
@@ -67,7 +67,7 @@ def area(vs):
     for [x1, y1] in vs[1:]:
         dx = x1 - x0
         dy = y1 - y0
-        a += 0.5 * (y0 * dx - x0 * dy)
+        a += 0.5 * abs(y0 * dx - x0 * dy)
         x0 = x1
         y0 = y1
     return a
@@ -173,20 +173,28 @@ def make_volume_objective(model: dde.Model,
     def _volume_objective(params: Sequence[float]) -> float:
         eps, kappa, delta = params
 
-        x, y, psi_pred, psi_true, error = evaluate(ITER, model)
-        c = plt.contour(x, y, psi_true, [0])
-        true_volume = c.collections[0].get_paths()[0].vertices.shape[0]
+        # x, y, psi_pred, psi_true, error = evaluate(ITER, model)
 
-        c = plt.contour(x, y, psi_pred, [0])
-        pred_volume = c.collections[0].get_paths()[0].vertices.shape[0]
+        x = 1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau))
+        y = eps * kappa * np.sin(tau)
+        contour = np.column_stack((x, y))
+
+        pred_volume = area(contour)
+
+
+        obj = (pred_volume - target_volume) ** 2
+        print(f"True volume: {target_volume}, Predicted volume: {pred_volume}, Objective: {obj}")
+        return float(obj)
+    return _volume_objective
+
+
+
+        # c = plt.contour(x, y, psi_pred, [0])
+        # pred_volume = c.collections[0].get_paths()[0].vertices.shape[0]
 
         # R_bnd, Z_bnd = solov_ev_boundary(tau, eps, kappa, delta, r0=major_radius)
         # area_cs = polygon_area(R_bnd, Z_bnd)
         # volume = torus_volume(area_cs, major_radius)
-        
-        obj = (pred_volume - true_volume) ** 2
-        return float(obj)
-    return _volume_objective
 
 
 # ----------------------------------------------------------------------------
