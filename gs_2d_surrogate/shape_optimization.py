@@ -1,6 +1,8 @@
 import os
 from typing import Callable, Sequence, Tuple
-import tensorflow as tf
+# import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 import numpy as np
 from scipy.optimize import minimize, OptimizeResult
 import sys
@@ -184,6 +186,7 @@ def make_volume_objective(model: dde.Model,
 
         obj = (pred_volume - target_volume) ** 2
         print(f"True volume: {target_volume}, Predicted volume: {pred_volume}, Objective: {obj}")
+        print(f"eps: {eps}, kappa: {kappa}, delta: {delta}")
         return float(obj)
     return _volume_objective
 
@@ -223,7 +226,7 @@ def optimise_shape(model: dde.Model,
         maxiter: Maximum iterations.
     """
     # ------------------ Load pretrained model --------------------
-    # model = dde.models.Model.load(model_path) # gibberish
+    # model = dde.models.Model.restore(model_path) # gibberish
 
     # ------------------ Initial guess ----------------------------
     if initial_guess is None:
@@ -251,9 +254,19 @@ def optimise_shape(model: dde.Model,
 
 if __name__ == "__main__":
     TIME = time.strftime("%m%d%H%M")
-    # Path where *model.ckpt* (or SavedModel) resides.
-    MODEL_DIR = "/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_models_new/run_07030318/ITER-01.ckpt-812.ckpt.index"  # pretrained model checkpoint
 
+    # Parse command line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_path", type=str, default=None)
+    parser.add_argument("--target_beta_p", type=float, default=1.0)
+    parser.add_argument("--target_volume", type=float, default=0.5)
+    parser.add_argument("--lambda_volume", type=float, default=1.0)
+    parser.add_argument("--initial_guess", type=list, default=[0.3, 2.1, 0.1])
+    parser.add_argument("--bounds", type=list, default=([0.1, 1.5, -0.5], [0.5, 3.0, 0.5]))
+    parser.add_argument("--method", type=str, default="L-BFGS-B")
+    parser.add_argument("--maxiter", type=int, default=300)
+    parser.add_argument("--save", type=bool, default=False)
+    args = parser.parse_args()
 
     ######################
     # ITER Configuration #
@@ -350,6 +363,9 @@ if __name__ == "__main__":
     # Define model
     # ----------------------------------------------------------------------------
     
+    CHECKPOINT_DIR = "/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_models_new"  # pretrained model checkpoint
+    RUN_NAME = "/run_07031537"
+    CHECKPOINT_NAME = "/ITER-911.ckpt"
 
     DEPTH = 6  # 3
     BREADTH = 64  # 20
@@ -361,7 +377,13 @@ if __name__ == "__main__":
 
     model = dde.model.Model(data, net)
 
-    print(type(model))
+    # model.compile("adam", lr=LR)
+    model.compile("L-BFGS-B", loss_weights=[1,100])
+
+    model.restore(CHECKPOINT_DIR+RUN_NAME+CHECKPOINT_NAME, verbose=1)
+
+    # print(type(model)) # <class 'deepxde.model.Model'>
+
 
 
     # Target specifications (user-defined)
@@ -370,8 +392,6 @@ if __name__ == "__main__":
 
 
 
-    # model.compile("adam", lr=LR)
-    model.compile("L-BFGS-B", loss_weights=[1,100])
 
     # model.restore(MODEL_DIR, verbose=1)
     # model.print_model()
@@ -381,14 +401,7 @@ if __name__ == "__main__":
     if args.save:
 
         model.save(f"/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_models_new/run_{TIME}/ITER", protocol="backend", verbose=1)
-
-        dde.saveplot(
-        loss_history, 
-        train_state, 
-        issave=True, 
-        isplot=True,
-        output_dir= f"/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_plots_new/run_{TIME}"
-    )
+        dde.saveplot(loss_history, train_state, issave=True, isplot=True, output_dir= f"/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_plots_new/run_{TIME}")
 
 
     ITER = GS_Linear(eps=0.32, kappa=1.7, delta=0.33)
@@ -401,7 +414,7 @@ if __name__ == "__main__":
                             target_beta_p=TARGET_BETA_P,
                             target_volume=TARGET_VOLUME,
                             lambda_volume=1.0,
-                            initial_guess=[0.3, 2.1, 0.1],
+                            initial_guess=[0.5, 100, 0.5],
                             bounds=([0.1, 1.5, -0.5], [0.5, 3.0, 0.5]),
                             method="L-BFGS-B",
                             maxiter=300)
@@ -419,29 +432,17 @@ if __name__ == "__main__":
 
 
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, default=None)
-    parser.add_argument("--target_beta_p", type=float, default=1.0)
-    parser.add_argument("--target_volume", type=float, default=0.5)
-    parser.add_argument("--lambda_volume", type=float, default=1.0)
-    parser.add_argument("--initial_guess", type=list, default=[0.3, 2.1, 0.1])
-    parser.add_argument("--bounds", type=list, default=([0.1, 1.5, -0.5], [0.5, 3.0, 0.5]))
-    parser.add_argument("--method", type=str, default="L-BFGS-B")
-    parser.add_argument("--maxiter", type=int, default=300)
-    parser.add_argument("--save", type=bool, default=True)
-    args = parser.parse_args()
-
 
 """
 Optimisation finished:
    message: CONVERGENCE: NORM OF PROJECTED GRADIENT <= PGTOL
   success: True
    status: 0
-      fun: 144.0
-        x: [ 3.000e-01  2.100e+00  1.000e-01]
-      nit: 0
-      jac: [ 0.000e+00  0.000e+00  0.000e+00]
-     nfev: 4
-     njev: 1
+      fun: 6.893893867343462e-13
+        x: [ 1.525e-01  1.630e+00 -2.778e-02]
+      nit: 6
+      jac: [ 5.678e-06  5.102e-07  4.095e-08]
+     nfev: 28
+     njev: 7
  hess_inv: <3x3 LbfgsInvHessProduct with dtype=float64>
 """
