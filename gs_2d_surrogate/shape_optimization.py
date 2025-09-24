@@ -218,14 +218,11 @@ def compute_beta_p(model: dde.Model,
     (R, Z) grid and the *ψ* field supplied via *X* and *psi_pred*.
     """
 
-    import numpy as _np
-    import matplotlib.pyplot as _plt
-
     # ------------------------------------------------------------------
     # 1. Reconstruct structured (R, Z, ψ) grids from the flattened input
     # ------------------------------------------------------------------
     N = psi_pred.shape[0]
-    n = int(_np.sqrt(N))
+    n = int(np.sqrt(N))
     if n * n != N:
         raise ValueError("X and psi_pred must correspond to a square R-Z grid.")
 
@@ -236,13 +233,13 @@ def compute_beta_p(model: dde.Model,
     # ------------------------------------------------------------------
     # 2. Extract the ψ = 0 contour to obtain the plasma boundary
     # ------------------------------------------------------------------
-    # c = _plt.contour(R, Z, psi, levels=[0.0])
+    # c = plt.contour(R, Z, psi, levels=[0.0])
     # if not c.collections or not c.collections[0].get_paths():
     #     # Fallback: if no closed contour is found return a large penalty
     #     # print("No closed contour found!!!!!!!!!!!!!!!")
-    #     return _np.inf
+    #     return np.inf
     # vertices = c.collections[0].get_paths()[0].vertices  # (N_v, 2)
-    # _plt.close(c.figure)  # prevent accumulation of hidden figures
+    # plt.close(c.figure)  # prevent accumulation of hidden figures
 
     # ------------------------------------------------------------------
     # 3. Geometric integrals (now using shared helpers)
@@ -255,7 +252,7 @@ def compute_beta_p(model: dde.Model,
     # ------------------------------------------------------------------
     # 4. Physical constants and shape parameters (ITER defaults)
     # ------------------------------------------------------------------
-    mu0 = 4.0 * _np.pi * 1e-7
+    mu0 = 4.0 * np.pi * 1e-7
     Itor = 15e6          # Plasma current [A]
     a_minor = 2.0        # Minor radius [m]
     R0 = 6.2             # Major radius [m]
@@ -267,11 +264,11 @@ def compute_beta_p(model: dde.Model,
     # 5. Compute q* and β_p following utils.utils.compute_params
     #    (integrate over the full R–Z grid; psi is ~0 outside the plasma)
     # ------------------------------------------------------------------
-    psi_average = _np.trapz(
-        _np.trapz(psi * R[:, 0], R[:, 0], axis=0), Z[0, :]
+    psi_average = np.trapz(
+        np.trapz(psi * R[:, 0], R[:, 0], axis=0), Z[0, :]
     )
-    # psi_average = _np.trapz(
-    #     _np.trapz(psi * R[0, :], R[0, :], axis=0), Z[:, 0]
+    # psi_average = np.trapz(
+    #     np.trapz(psi * R[0, :], R[0, :], axis=0), Z[:, 0]
     # )
     # print("R[0, :]", R[0, :])
     # print("R[:, 0]", R[:, 0])
@@ -368,10 +365,10 @@ def predict_psi(
     psi_true_grid = np.copy(np.reshape(np.array(psi_true_list), (n, n)))
 
     #-------------- plot the grid and psi solution in 3D --------------!!!!!
-    TIME0 = time.strftime("%M%S")
-    DATE = time.strftime("%m%d")
+
     if plot_psi:
-        import matplotlib.pyplot as plt
+        TIME0 = time.strftime("%M%S")
+        DATE = time.strftime("%m%d")
         from mpl_toolkits.mplot3d import Axes3D
 
         # Create 3D figure
@@ -832,8 +829,12 @@ if __name__ == "__main__":
     # ------------------------------------------------------------
     # Plot optimisation diagnostics collected in *metrics*
     # ------------------------------------------------------------
-    plot_save_path = f"/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/plots/all/plots_{TIME}/"
+    
     if args.plot:
+        plot_save_path = f"/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/plots/run_plots/plots_lambda_{args.lambda_volume}/"
+        if not os.path.exists(plot_save_path):
+            os.makedirs(plot_save_path)
+            
         if metrics["beta_p_pred"]:
             iters = range(len(metrics["beta_p_pred"]))
 
@@ -867,6 +868,7 @@ if __name__ == "__main__":
 
             # 3. Objective value
             plt.figure()
+            plt.yscale("log")
             plt.plot(iters, metrics["obj"], label="Objective")
             plt.xlabel("Function evaluation")
             plt.ylabel("Objective value")
