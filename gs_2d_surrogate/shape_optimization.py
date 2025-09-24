@@ -1,3 +1,9 @@
+"""cd gs_2d_surrogate/
+source /scratch/yx3044/Projects/deepxde_copy/venv/bin/activate
+conda activate deepxde_copy
+python -u shape_optimization.py --lambda_vol=125 --plot True >> shape_125.txt"""
+
+import time
 import os
 from typing import Callable, Sequence, Tuple
 # import tensorflow as tf
@@ -13,7 +19,7 @@ if deepxde_path not in sys.path:
 import deepxde as dde
 print("Using DeepXDE from:", dde.__file__)
 sys.path.append('/scratch/yx3044/Projects/deepxde_copy/gs-2d-surrogate')
-import time
+
 import argparse
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
@@ -355,14 +361,17 @@ def predict_psi(
     psi_pred_grid = np.copy(psi_pred_flat.reshape(n, n))
 
     # 4. Compute analytic ψ_true via GS_Linear
-    from utils.gs_solovev_sol import GS_Linear  # local import to avoid circular
+    # from utils.gs_solovev_sol import GS_Linear  # local import to avoid circular
 
-    gs = GS_Linear(eps=eps, kappa=kappa, delta=delta)
-    gs.get_BCs(A)
-    gs.solve_coefficients()
+    # gs = GS_Linear(eps=eps, kappa=kappa, delta=delta)
+    # gs.get_BCs(A)
+    # gs.solve_coefficients()
 
-    psi_true_list = [gs.psi_func(p[0], p[1]) for p in spatial]
-    psi_true_grid = np.copy(np.reshape(np.array(psi_true_list), (n, n)))
+    # # psi_true_list = [gs.psi_func(p[0], p[1]) for p in spatial]
+    # # psi_true_grid = np.copy(np.reshape(np.array(psi_true_list), (n, n)))
+
+    psi_true_list = "placeholder"
+    psi_true_grid = "placeholder"
 
     #-------------- plot the grid and psi solution in 3D --------------!!!!!
 
@@ -735,7 +744,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_path", type=str, default=None)
     parser.add_argument("--target_beta_p", type=float, default=1.0)
     parser.add_argument("--target_volume", type=float, default=0.5)
-    parser.add_argument("--lambda_volume", type=float, default=10000)
+    parser.add_argument("--lambda_volume", type=float, default=125)
     parser.add_argument("--initial_guess", type=list, default=[0.32, 1.7, 0.33])
     parser.add_argument("--bounds", type=list, default=([eps0[0], kappa0[0], delta0[0]], [eps0[1], kappa0[1], delta0[1]]))
     parser.add_argument("--method", type=str, default="L-BFGS-B")
@@ -748,6 +757,8 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------------------
     # Define model
     # ----------------------------------------------------------------------------
+
+    start_run_time = time.time()
     
     if args.model_path is not None:
         CHECKPOINT_PATH = args.model_path
@@ -825,6 +836,9 @@ if __name__ == "__main__":
 
 
     print("\nOptimisation finished:\n", result)
+
+    end_run_time = time.time()
+    print(f"Run time: {end_run_time - start_run_time} seconds")
 
     # ------------------------------------------------------------
     # Plot optimisation diagnostics collected in *metrics*
