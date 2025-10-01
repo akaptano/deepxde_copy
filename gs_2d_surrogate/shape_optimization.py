@@ -1,7 +1,16 @@
 """cd gs_2d_surrogate/
 source /scratch/yx3044/Projects/deepxde_copy/venv/bin/activate
 conda activate deepxde_copy
-python -u shape_optimization.py --lambda_vol=125 --plot True >> shape_125.txt"""
+python -u shape_optimization.py --lambda_vol=125 --zoom=1.2 --plot True >> shape_125.txt
+
+
+If you get an error saying:  
+
+vertices = c.collections[0].get_paths()[0].vertices
+IndexError: list index out of range
+
+try using a larger zoom, e.g. zoom=2.2
+"""
 
 import time
 import os
@@ -500,7 +509,8 @@ def make_objective(model: dde.Model,
                    lambda_vol: float = 1.0,
                    n_boundary: int = 400,
                    n_grid: int = 32,
-                   major_radius: float = 1.0) -> Callable[[Sequence[float]], float]:
+                   major_radius: float = 1.0,
+                   zoom: float = 1.2) -> Callable[[Sequence[float]], float]:
     """Return *f([eps, kappa, delta])* for optimisation.
 
     Args:
@@ -517,7 +527,7 @@ def make_objective(model: dde.Model,
 
     def _objective(params: Sequence[float]) -> float:
         eps, kappa, delta = params
-        R, Z, psi_pred_grid, psi_true_grid, X_in, psi_pred_flat = predict_psi(model, eps=eps, kappa=kappa, delta=delta, return_X=True, plot_psi=False)
+        R, Z, psi_pred_grid, psi_true_grid, X_in, psi_pred_flat = predict_psi(model, eps=eps, kappa=kappa, delta=delta, return_X=True, plot_psi=False, zoom=zoom)
         # visualize_contours(R, Z, psi_pred_grid, eps, kappa, delta, savepath=f"/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/plots/psi_contour/{eps}_{kappa}_{delta}.png")
 
         # offset = psi_pred_flat.mean()
@@ -551,7 +561,7 @@ def make_objective(model: dde.Model,
         plt.close(c.figure)
 
         # def analytical():
-            # x_anal = 1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau))
+            # x_anal = 1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau)
             # y_anal = eps * kappa * np.sin(tau)
             # vertices = np.column_stack((x_anal, y_anal))
 
@@ -671,6 +681,7 @@ def optimise_shape(model: dde.Model,
                    bounds: Tuple[Sequence[float], Sequence[float]] | None = None,
                    method: str = "L-BFGS-B",
                    maxiter: int = 200,
+                   zoom: float = 1.2,
                    objective_type: str = "volume") -> OptimizeResult:
     """Optimise (eps, kappa, delta) to minimise f(psi_pred).
 
@@ -716,7 +727,8 @@ def optimise_shape(model: dde.Model,
                                    lambda_vol=lambda_volume,
                                    n_boundary=400,
                                    n_grid=32,
-                                   major_radius=1.0)
+                                   major_radius=1.0,
+                                   zoom=zoom)
 
         options = dict(maxiter=maxiter, disp=True, ftol=1e-09, gtol=1e-05)
 
@@ -752,6 +764,7 @@ if __name__ == "__main__":
     parser.add_argument("--train_new", type=bool, default=False)
     parser.add_argument("--plot", type=bool, default=False)
     parser.add_argument("--use_fallback", type=bool, default=False)
+    parser.add_argument("--zoom", type=float, default=1.2)
     args = parser.parse_args()
 
     # ----------------------------------------------------------------------------
@@ -832,6 +845,7 @@ if __name__ == "__main__":
                             bounds=args.bounds,
                             method=args.method,
                             maxiter=args.maxiter,
+                            zoom=args.zoom,
                             objective_type="beta_p")
 
 
@@ -850,18 +864,26 @@ if __name__ == "__main__":
             os.makedirs(plot_save_path)
             
         if metrics["beta_p_pred"]:
-            iters = range(len(metrics["beta_p_pred"]))
+            # Take every 4th item
+            iters = range(0, len(metrics["beta_p_pred"]), 4)
+            beta_p_pred = [metrics["beta_p_pred"][i] for i in iters]
+            volume_pred = [metrics["volume_pred"][i] for i in iters]
+            eps = [metrics["eps"][i] for i in iters]
+            kappa = [metrics["kappa"][i] for i in iters] 
+            delta = [metrics["delta"][i] for i in iters]
+            obj = [metrics["obj"][i] for i in iters]
+            iters = range(len(obj))
 
             # 1. β_p and volume on shared x-axis with twin y-axes
             fig, ax1 = plt.subplots()
             ax1.set_xlabel("Function evaluation")
             ax1.set_ylabel("Predicted β_p", color="tab:red")
-            ax1.plot(iters, metrics["beta_p_pred"], color="tab:red", label="β_p (pred)")
+            ax1.plot(iters, beta_p_pred, color="tab:red", label="β_p (pred)")
             ax1.tick_params(axis='y', labelcolor='tab:red')
 
             ax2 = ax1.twinx()
             ax2.set_ylabel("Predicted volume", color="tab:blue")
-            ax2.plot(iters, metrics["volume_pred"], color="tab:blue", label="Volume (pred)")
+            ax2.plot(iters, volume_pred, color="tab:blue", label="Volume (pred)")
             ax2.tick_params(axis='y', labelcolor='tab:blue')
 
             fig.tight_layout()
@@ -870,9 +892,9 @@ if __name__ == "__main__":
 
             # 2. ε, κ, δ evolution
             plt.figure()
-            plt.plot(iters, metrics["eps"],   label="eps (ε)")
-            plt.plot(iters, metrics["kappa"], label="kappa (κ)")
-            plt.plot(iters, metrics["delta"], label="delta (δ)")
+            plt.plot(iters, eps, label="eps (ε)")
+            plt.plot(iters, kappa, label="kappa (κ)")
+            plt.plot(iters, delta, label="delta (δ)")
             plt.xlabel("Function evaluation")
             plt.ylabel("Parameter value")
             plt.legend()
@@ -883,7 +905,7 @@ if __name__ == "__main__":
             # 3. Objective value
             plt.figure()
             plt.yscale("log")
-            plt.plot(iters, metrics["obj"], label="Objective")
+            plt.plot(iters, obj, label="Objective")
             plt.xlabel("Function evaluation")
             plt.ylabel("Objective value")
             plt.legend()
