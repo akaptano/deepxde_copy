@@ -41,6 +41,7 @@ dde.config.set_default_float("float64")
 metrics = {
     "beta_p_pred": [],  # predicted β_p each function evaluation
     "volume_pred": [],  # predicted volume each function evaluation
+    "qstar_pred": [],  # predicted qstar each function evaluation
     "eps": [],          # ε value proposed
     "kappa": [],        # κ value proposed
     "delta": [],         # δ value proposed
@@ -56,12 +57,18 @@ from utils.gs_solovev_sol import GS_Linear
 # ITER Configuration
 # ----------------------------------------------------------------------------
 A = -0.155
+# eps_deviation = 0.2
+# kappa_deviation = 0.2
+# delta_deviation = 0.2
+# eps0 = (0.32 - eps_deviation, 0.32 + eps_deviation)
+# kappa0 = (1.7 - kappa_deviation, 1.7 + kappa_deviation)
+# delta0 = (0.33 - delta_deviation, 0.33 + delta_deviation)
 eps_deviation = 0.2
-kappa_deviation = 0.2
-delta_deviation = 0.2
+kappa_deviation = 0.75
+delta_deviation = 0.5
 eps0 = (0.32 - eps_deviation, 0.32 + eps_deviation)
-kappa0 = (1.7 - kappa_deviation, 1.7 + kappa_deviation)
-delta0 = (0.33 - delta_deviation, 0.33 + delta_deviation)
+kappa0 = (2 - kappa_deviation, 2 + kappa_deviation)
+delta0 = (0 - delta_deviation, 0 + delta_deviation)
 Amax = 0.2
 num_param = 5
 Arange = np.linspace(-Amax, Amax, num_param)
@@ -301,6 +308,56 @@ def compute_beta_p(model: dde.Model,
     return float(beta_p)
 
 
+
+def compute_beta_p_and_qstar(model: dde.Model,
+                   X: np.ndarray,
+                   psi_pred: np.ndarray,
+                   vertices: np.ndarray) -> float:
+    """Compute beta_p and q* from the predicted stream-function.
+    """
+    N = psi_pred.shape[0]
+    n = int(np.sqrt(N))
+    if n * n != N:
+        raise ValueError("X and psi_pred must correspond to a square R-Z grid.")
+
+    R = X[:, 0].reshape(n, n)
+    Z = X[:, 1].reshape(n, n)
+    psi = psi_pred.reshape(n, n)
+
+
+    area_cs = area(vertices)
+    Cp_val = Cp(vertices)
+    q_int = qstar_integral(vertices)
+
+
+    # ------------------------------------------------------------------
+    # (ITER defaults)
+    # ------------------------------------------------------------------
+    mu0 = 4.0 * np.pi * 1e-7
+    Itor = 15e6          # Plasma current [A]
+    a_minor = 2.0        # Minor radius [m]
+    R0 = 6.2             # Major radius [m]
+    B0 = 5.3             # Toroidal field on axis [T]
+
+    eps = float(X[0, 3])  # inverse aspect-ratio (ϵ) from the input tensor
+
+    psi_average = np.trapz(
+        np.trapz(psi * R[:, 0], R[:, 0], axis=0), Z[0, :]
+    )
+    psi0 = - mu0 * Itor * a_minor / eps / (-0.155 * q_int + 1.115 * area_cs)
+    qstar = - (a_minor * R0 * B0 * Cp_val) / (psi0 * (-0.155 * q_int + 1.115 * area_cs))
+
+    denom = area_cs * (-0.155 * q_int + 1.115 * area_cs)
+
+    beta_p = (2.0 * 1.155 * Cp_val ** 2 * psi_average) / (denom ** 2)
+
+    return float(beta_p), float(qstar)
+    
+
+
+
+
+
 # ----------------------------------------------------------------------------
 # Predict psi
 # ----------------------------------------------------------------------------
@@ -500,10 +557,10 @@ def visualize_contours(R, Z, psi_grid, eps, kappa, delta, A=-0.155, savepath=Non
 
 
 # ----------------------------------------------------------------------------
-# Total objective function
+# Objective function with beta_p and volume
 # ----------------------------------------------------------------------------
 
-def make_objective(model: dde.Model,
+def make_beta_p_volume_objective(model: dde.Model,
                    target_beta_p: float,
                    target_volume: float,
                    lambda_vol: float = 1.0,
@@ -617,7 +674,7 @@ def make_objective(model: dde.Model,
 
 
 # ----------------------------------------------------------------------------
-# Volume objective function
+# Objective function with volume
 # ----------------------------------------------------------------------------
 
 def make_volume_objective(model: dde.Model,
@@ -667,6 +724,93 @@ def make_volume_objective(model: dde.Model,
     #     return float(obj)
 
 
+# ----------------------------------------------------------------------------
+# Objective function with beta_p, volume and qstar
+# ----------------------------------------------------------------------------
+
+
+def make_objective(model: dde.Model,
+                   target_beta_p: float,
+                   target_volume: float,
+                   target_qstar: float,
+                   lambda_beta_p: float = 1.0,
+                   lambda_vol: float = 1.0,
+                   lambda_qstar: float = 1.0,
+                   n_boundary: int = 400,
+                   n_grid: int = 32,
+                   major_radius: float = 1.0,
+                   zoom: float = 1.2) -> Callable[[Sequence[float]], float]:
+    """Return *f([eps, kappa, delta])* for optimisation.
+
+    Args:
+        model: Pretrained DeepXDE model representing psi.
+        target_beta_p: Desired β_p.
+        target_volume: Desired plasma volume.
+        target_qstar: Desired qstar.
+        lambda_beta_p: Weight for beta_p term.
+        lambda_vol: Weight for volume term.
+        lambda_qstar: Weight for qstar term.
+        n_boundary: Number of boundary points used to compute geometric props.
+        n_grid: Cartesian grid resolution (per dimension) for model queries.
+        major_radius: Major radius R0.
+    """
+
+    tau = np.linspace(0.0, 2 * np.pi, n_boundary, endpoint=False)
+
+    def _objective(params: Sequence[float]) -> float:
+        eps, kappa, delta = params
+        R, Z, psi_pred_grid, psi_true_grid, X_in, psi_pred_flat = predict_psi(model, eps=eps, kappa=kappa, delta=delta, return_X=True, plot_psi=False, zoom=zoom)
+        # visualize_contours(R, Z, psi_pred_grid, eps, kappa, delta, savepath=f"/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/plots/psi_contour/{eps}_{kappa}_{delta}.png")
+
+        use_fallback = args.use_fallback
+        if use_fallback:
+            x_anal = 1 + eps * np.cos(tau + np.arcsin(delta) * np.sin(tau))
+            y_anal = eps * kappa * np.sin(tau)
+            vertices_analytic = np.column_stack((x_anal, y_anal))
+
+        # Try to extract ψ = 0 contour from the network prediction. If it fails
+        # (no closed contour found on the current grid) fall back to the
+        # analytic boundary to keep the optimiser running.
+        c = plt.contour(R, Z, psi_pred_grid, levels=[0.0])
+        
+        if use_fallback:
+            if c.collections and c.collections[0].get_paths():
+                vertices = c.collections[0].get_paths()[0].vertices
+            else:
+                # Fallback: use analytic boundary when the predicted contour is
+                # not available. This prevents IndexError and provides a
+                # meaningful, smooth objective for the optimiser.
+                vertices = vertices_analytic
+        else:
+            vertices = c.collections[0].get_paths()[0].vertices
+        plt.close(c.figure)
+
+
+        volume = area(vertices)
+        beta_p, qstar = compute_beta_p_and_qstar(model, X_in, psi_pred_flat, vertices)
+
+        # obj = lambda_beta_p * ((beta_p - target_beta_p)/target_beta_p) ** 2 + lambda_vol * ((volume - target_volume)/target_volume) ** 2 + lambda_qstar * ((qstar - target_qstar)/target_qstar) ** 2
+        obj = lambda_beta_p * (beta_p - target_beta_p) ** 2 + lambda_vol * (volume - target_volume) ** 2 + lambda_qstar * (qstar - target_qstar) ** 2
+
+        # Record diagnostics for later plotting
+        metrics["beta_p_pred"].append(beta_p)
+        metrics["volume_pred"].append(volume)
+        metrics["qstar_pred"].append(qstar)
+        metrics["eps"].append(eps)
+        metrics["kappa"].append(kappa)
+        metrics["delta"].append(delta)
+        metrics["obj"].append(obj)
+
+        print(f"True beta_p: {target_beta_p}, Predicted beta_p: {beta_p}, True volume: {target_volume}, Predicted volume: {volume}, True qstar: {target_qstar}, Predicted qstar: {qstar}, Objective: {obj}")
+        print(f"eps: {eps}, kappa: {kappa}, delta: {delta}\n")
+        return float(obj)
+    
+    return _objective
+
+
+
+
+
 
 # ----------------------------------------------------------------------------
 # Top-level optimisation 
@@ -676,7 +820,10 @@ def optimise_shape(model: dde.Model,
                    ITER: GS_Linear,
                    target_beta_p: float,
                    target_volume: float,
+                   target_qstar: float,
+                   lambda_beta_p: float = 1.0,
                    lambda_volume: float = 1.0,
+                   lambda_qstar: float = 1.0,
                    initial_guess: Sequence[float] | None = None,
                    bounds: Tuple[Sequence[float], Sequence[float]] | None = None,
                    method: str = "L-BFGS-B",
@@ -689,7 +836,10 @@ def optimise_shape(model: dde.Model,
         model_path: Directory containing saved DeepXDE model.
         target_beta_p: Desired β_p.
         target_volume: Desired toroidal volume.
+        target_qstar: Desired qstar.
+        lambda_beta_p: Weight λ in objective.
         lambda_volume: Weight λ in objective.
+        lambda_qstar: Weight λ in objective.
         initial_guess: Starting [eps, kappa, delta].
         bounds: Tuple (lower, upper) for each parameter.
         method: SciPy optimisation method.
@@ -711,17 +861,9 @@ def optimise_shape(model: dde.Model,
                                         n_boundary=400,
                                         n_grid=32,
                                         major_radius=1.0)
-        options = dict(maxiter=maxiter, disp=True)
 
-        res = minimize(objective,
-                    x0=initial_guess,
-                    method=method,
-                    bounds=None if bounds is None else list(zip(*bounds)),
-                    options=options)
-
-
-    if objective_type == "beta_p":
-        objective = make_objective(model,
+    elif objective_type == "beta_p":
+        objective = make_beta_p_objective(model,
                                    target_beta_p=target_beta_p,
                                    target_volume=target_volume,
                                    lambda_vol=lambda_volume,
@@ -730,18 +872,32 @@ def optimise_shape(model: dde.Model,
                                    major_radius=1.0,
                                    zoom=zoom)
 
-        options = dict(maxiter=maxiter, disp=True, ftol=1e-09, gtol=1e-05)
-
-        res = minimize(objective,
-                    x0=initial_guess,
-                    method=method,
-                    # bounds=None if bounds is None else list(zip(*bounds)),
-                    options=options)
-
+    
+    elif objective_type == "beta_p_and_qstar":
+        objective = make_objective(model,
+                                   target_beta_p=target_beta_p,
+                                   target_volume=target_volume,
+                                   target_qstar=target_qstar,
+                                   lambda_beta_p=lambda_beta_p,
+                                   lambda_vol=lambda_volume,
+                                   lambda_qstar=lambda_qstar,
+                                   n_boundary=400,
+                                   n_grid=32,
+                                   major_radius=1.0,
+                                   zoom=zoom)
     else:
         raise ValueError(f"Invalid objective type: {objective_type}")
 
 
+    options = dict(maxiter=maxiter, disp=True, ftol=1e-09, gtol=1e-05)
+
+    res = minimize(objective,
+                x0=initial_guess,
+                method=method,
+                bounds=None if bounds is None else list(zip(*bounds)),
+                options=options)
+    
+    
     return res
 
 
@@ -755,8 +911,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, default=None)
     parser.add_argument("--target_beta_p", type=float, default=1.0)
-    parser.add_argument("--target_volume", type=float, default=0.5)
-    parser.add_argument("--lambda_volume", type=float, default=125)
+    parser.add_argument("--target_volume", type=float, default=2.7)
+    parser.add_argument("--target_qstar", type=float, default=2.1)
+    parser.add_argument("--lambda_beta_p", type=float, default=1)
+    parser.add_argument("--lambda_volume", type=float, default=10)
+    parser.add_argument("--lambda_qstar", type=float, default=3)
     parser.add_argument("--initial_guess", type=list, default=[0.32, 1.7, 0.33])
     parser.add_argument("--bounds", type=list, default=([eps0[0], kappa0[0], delta0[0]], [eps0[1], kappa0[1], delta0[1]]))
     parser.add_argument("--method", type=str, default="L-BFGS-B")
@@ -766,6 +925,10 @@ if __name__ == "__main__":
     parser.add_argument("--use_fallback", type=bool, default=False)
     parser.add_argument("--zoom", type=float, default=1.2)
     args = parser.parse_args()
+
+    print(f"\n\nTargets: beta_p: {args.target_beta_p}, volume: {args.target_volume}, qstar: {args.target_qstar}")
+    print(f"Lambdas: beta_p: {args.lambda_beta_p}, volume: {args.lambda_volume}, qstar: {args.lambda_qstar}")
+    print(f"Zoom: {args.zoom}\n\n")
 
     # ----------------------------------------------------------------------------
     # Define model
@@ -840,13 +1003,16 @@ if __name__ == "__main__":
                             ITER=ITER,
                             target_beta_p=args.target_beta_p,
                             target_volume=args.target_volume,
+                            target_qstar=args.target_qstar,
+                            lambda_beta_p=args.lambda_beta_p,
                             lambda_volume=args.lambda_volume,
+                            lambda_qstar=args.lambda_qstar,
                             initial_guess=args.initial_guess,
                             bounds=args.bounds,
                             method=args.method,
                             maxiter=args.maxiter,
                             zoom=args.zoom,
-                            objective_type="beta_p")
+                            objective_type="beta_p_and_qstar")
 
 
     print("\nOptimisation finished:\n", result)
