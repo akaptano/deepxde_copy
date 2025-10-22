@@ -10,3 +10,27 @@ docs/_build/
 
 # VSCode
 .vscode/
+
+*.cff
+*.txt
+*.log
+*.out
+*.err
+*.png
+*.pdf
+*.dat
+*.jpg
+*.meta
+*.npy
+*.npz
+*.index
+*.data-00000-of-00001
+*.slurm
+*.yaml
+*.wandb
+*.checkpoint
+*.json
+
+checkpoint
+
+*.sh
