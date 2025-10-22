@@ -34,3 +34,5 @@ docs/_build/
 checkpoint
 
 *.sh
+
+latest-run
