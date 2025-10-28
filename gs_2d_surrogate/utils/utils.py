@@ -37,7 +37,8 @@ def evaluate_eq(ITER, model):
         np.linspace(0, 0, 1),
     )
     ones = np.ones(nx)
-    num_inputs = model.train_state.X_train.shape[-1]
+    # num_inputs = model.train_state.X_train.shape[-1]
+    num_inputs = 6
 
     if num_inputs == 2:
         X_eq = np.vstack((np.ravel(x_eq), np.ravel(y_eq))).T
@@ -80,7 +81,7 @@ def evaluate(ITER, model):
     output:
         psi_true: analytical solution
         psi_pred: evaluated value from PINN model
-        error: relative error betwen psi_tre and psi_pred
+        error: relative error betwen psi_true and psi_pred
     '''
     N = 200
     A, eps, kappa, delta = ITER.A, ITER.eps, ITER.kappa, ITER.delta
@@ -107,7 +108,17 @@ def evaluate(ITER, model):
     ones = np.ones(nx * ny)
     ones_ellipse = np.ones(N)
 
-    num_inputs = model.train_state.X_train.shape[-1]
+    # ------------------------------------------------------------------
+    # Determine how many inputs the network expects. For inference-only
+    # models `train_state.X_train` may be ``None`` because no training has
+    # been performed in the current session.  Fall back to inspecting the
+    # network architecture in that case.
+    # ------------------------------------------------------------------
+
+    # num_inputs = model.train_state.X_train.shape[-1]
+    num_inputs = 6
+
+
     if num_inputs == 2:
         X = np.vstack((
             np.ravel(x),
@@ -170,10 +181,14 @@ def evaluate(ITER, model):
     psi_pred_lin = psi_pred_lin.reshape(-1)
     psi_pred = np.copy(np.reshape(psi_pred_lin, [nx, ny]))
 
-    e_max = max((output_bc_pred - np.array(output_bc_true)) ** 2 / min(output_bc_true) ** 2)
-    e = (psi_pred_lin - np.array(psi_true_lin)) ** 2 / min(psi_true_lin) ** 2
+    e_max = max((output_bc_pred - np.array(output_bc_true)) ** 2 / max(output_bc_true) ** 2)
+    e = (psi_pred_lin - np.array(psi_true_lin)) ** 2 / max(psi_true_lin) ** 2
     error = np.reshape(e, [nx, ny])
-    error[error > e_max] = e_max
+
+    # e_max = max((output_bc_pred - np.array(output_bc_true)) ** 2 / min(output_bc_true) ** 2)
+    # e = (psi_pred_lin - np.array(psi_true_lin)) ** 2 / min(psi_true_lin) ** 2
+    # error = np.reshape(e, [nx, ny])
+    # error[error > e_max] = e_max
     return x, y, psi_pred, psi_true, error
 
 def plot_summary_figure(ITER, model, X_test, losshistory, loss_ratio, PATH, engineering_param=False):
@@ -513,6 +528,18 @@ def relative_error_plot(
     cmap = plt.cm.get_cmap("magma", nlevels + 1)
 
     # Calculate corresponding psi
+    # if len(X_test) != 0:
+    #     psi_test = []
+    #     for point in X_test:
+    #         psi_test.append(ITER.psi_func(point[0], point[1]))
+    #     psi_true_test = np.reshape(psi_test, [len(psi_test), 1])
+    #     output_test = model.predict(X_test)
+    #     psi_pred_test = output_test[:, 0].reshape(-1)
+    #     psi_pred_test = np.reshape(psi_pred_test, [len(psi_pred_test), 1])
+    #     e = (psi_true_test - psi_pred_test) ** 2 / min(psi_true_test) ** 2
+    #     print('Average normalized percent error = ', np.mean(np.sqrt(e)) * 100)
+    #     print('Max normalized percent error = ', np.max(np.sqrt(e)) * 100)
+    #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     if len(X_test) != 0:
         psi_test = []
         for point in X_test:
@@ -521,13 +548,13 @@ def relative_error_plot(
         output_test = model.predict(X_test)
         psi_pred_test = output_test[:, 0].reshape(-1)
         psi_pred_test = np.reshape(psi_pred_test, [len(psi_pred_test), 1])
-        e = (psi_true_test - psi_pred_test) ** 2 / min(psi_true_test) ** 2
-        print('Average normalized percent error = ', np.mean(np.sqrt(e)) * 100)
-        print('Max normalized percent error = ', np.max(np.sqrt(e)) * 100)
+        e = np.abs(psi_true_test - psi_pred_test) / np.abs(max(psi_pred_test))
+        print('Average normalized percent error = ', np.mean(e) * 100)
+        print('Max normalized percent error = ', np.max(e) * 100)
 
     # levels = np.logspace(np.log(np.min(error) + 1e-10), np.log(np.max(error)), nlevels + 1)
     # levels = np.linspace(0.0, np.max(error), nlevels + 1)
-    error[error > error.max()/1000.0] = error.max()/1000.0
+    # error[error > error.max()/1000.0] = error.max()/1000.0
 
     cp = ax.contourf(
         x, y, error + 1e-10, # levels=nlevels,
