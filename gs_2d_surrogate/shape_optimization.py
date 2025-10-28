@@ -523,7 +523,8 @@ def make_beta_p_volume_objective(model: dde.Model,
                    major_radius: float = 1.0,
                    zoom: float = 1.2,
                    A_fixed: float = -0.155,
-                   optimize_A: bool = False) -> Callable[[Sequence[float]], float]:
+                   optimize_A: bool = False,
+                   print_metrics: bool = False) -> Callable[[Sequence[float]], float]:
     """Return *f([eps, kappa, delta])* for optimisation.
 
     Args:
@@ -601,8 +602,10 @@ def make_beta_p_volume_objective(model: dde.Model,
         metrics["A"].append(A_cur)
         metrics["obj"].append(obj)
 
-        print(f"True beta_p: {target_beta_p}, Predicted beta_p: {beta_p}, True volume: {target_volume}, Predicted volume: {volume}, Objective: {obj}")
-        print(f"eps: {eps}, kappa: {kappa}, delta: {delta}, A: {A_cur}\n")
+        if print_metrics:
+            print(f"True beta_p: {target_beta_p}, Predicted beta_p: {beta_p}, True volume: {target_volume}, Predicted volume: {volume}, Objective: {obj}")
+            print(f"eps: {eps}, kappa: {kappa}, delta: {delta}, A: {A_cur}\n")
+
         return float(obj)
     
     return _objective
@@ -618,7 +621,8 @@ def make_volume_objective(model: dde.Model,
                          n_boundary: int = 400,
                          n_grid: int = 32,
                          major_radius: float = 1.0,
-                         optimize_A: bool = False) -> Callable[[Sequence[float]], float]:
+                         optimize_A: bool = False,
+                         print_metrics: bool = False) -> Callable[[Sequence[float]], float]:
     """Return *f([eps, kappa, delta])* for optimisation."""
 
     tau = np.linspace(0.0, 2 * np.pi, n_boundary, endpoint=False)    
@@ -649,11 +653,12 @@ def make_volume_objective(model: dde.Model,
         metrics["A"].append(A_cur if optimize_A else float('nan'))
         metrics["obj"].append(obj)
 
-        print(f"True volume: {target_volume}, Predicted volume: {pred_volume}, Objective: {obj}")
-        if optimize_A:
-            print(f"eps: {eps}, kappa: {kappa}, delta: {delta}, A: {A_cur}")
-        else:
-            print(f"eps: {eps}, kappa: {kappa}, delta: {delta}")
+        if print_metrics:
+            print(f"True volume: {target_volume}, Predicted volume: {pred_volume}, Objective: {obj}")
+            if optimize_A:
+                print(f"eps: {eps}, kappa: {kappa}, delta: {delta}, A: {A_cur}")
+            else:
+                print(f"eps: {eps}, kappa: {kappa}, delta: {delta}")
         return float(obj)
     return _volume_objective
 
@@ -675,7 +680,8 @@ def make_objective(model: dde.Model,
                   major_radius: float = 1.0,
                   zoom: float = 1.2,
                   A_fixed: float = -0.155,
-                  optimize_A: bool = False) -> Callable[[Sequence[float]], float]:
+                  optimize_A: bool = False,
+                  print_metrics: bool = False) -> Callable[[Sequence[float]], float]:
     """Return *f([eps, kappa, delta])* for optimisation.
 
     Args:
@@ -742,8 +748,10 @@ def make_objective(model: dde.Model,
         metrics["A"].append(A_cur)
         metrics["obj"].append(obj)
 
-        print(f"True beta_p: {target_beta_p}, Predicted beta_p: {beta_p}, True volume: {target_volume}, Predicted volume: {volume}, True qstar: {target_qstar}, Predicted qstar: {qstar}, Objective: {obj}")
-        print(f"eps: {eps}, kappa: {kappa}, delta: {delta}, A: {A_cur}\n")
+        if print_metrics:
+            print(f"True beta_p: {target_beta_p}, Predicted beta_p: {beta_p}, True volume: {target_volume}, Predicted volume: {volume}, True qstar: {target_qstar}, Predicted qstar: {qstar}, Objective: {obj}")
+            print(f"eps: {eps}, kappa: {kappa}, delta: {delta}, A: {A_cur}\n")
+
         return float(obj)
     
     return _objective
@@ -772,7 +780,8 @@ def optimise_shape(model: dde.Model,
                   zoom: float = 1.2,
                   objective_type: str = "volume",
                   A_fixed: float = -0.155,
-                  optimize_A: bool = False) -> OptimizeResult:
+                  optimize_A: bool = False,
+                  print_metrics: bool = False) -> OptimizeResult:
     """Optimise (eps, kappa, delta) to minimise f(psi_pred).
 
     Args:
@@ -806,7 +815,8 @@ def optimise_shape(model: dde.Model,
                                         n_boundary=400,
                                         n_grid=32,
                                         major_radius=1.0,
-                                        optimize_A=optimize_A)
+                                        optimize_A=optimize_A,
+                                        print_metrics=print_metrics)
 
     elif objective_type == "beta_p":
         objective = make_beta_p_volume_objective(model,
@@ -818,7 +828,8 @@ def optimise_shape(model: dde.Model,
                                    major_radius=1.0,
                                    zoom=zoom,
                                    A_fixed=A_fixed,
-                                   optimize_A=optimize_A)
+                                   optimize_A=optimize_A,
+                                   print_metrics=print_metrics)
 
     
     elif objective_type == "beta_p_and_qstar":
@@ -834,7 +845,8 @@ def optimise_shape(model: dde.Model,
                                    major_radius=1.0,
                                    zoom=zoom,
                                    A_fixed=A_fixed,
-                                   optimize_A=optimize_A)
+                                   optimize_A=optimize_A,
+                                   print_metrics=print_metrics)
     else:
         raise ValueError(f"Invalid objective type: {objective_type}")
 
@@ -869,6 +881,132 @@ def optimise_shape(model: dde.Model,
 
 
 
+def optimise_shape_with_restarts(
+    model: dde.Model,
+    ITER: GS_Linear,
+    target_beta_p: float,
+    target_volume: float,
+    target_qstar: float,
+    lambda_beta_p: float = 1.0,
+    lambda_volume: float = 1.0,
+    lambda_qstar: float = 1.0,
+    n_restarts: int = 10,
+    bounds: Tuple[Sequence[float], Sequence[float]] | None = None,
+    method: str = "L-BFGS-B",
+    maxiter: int = 200,
+    zoom: float = 1.2,
+    objective_type: str = "beta_p_and_qstar",
+    A_fixed: float = -0.155,
+    optimize_A: bool = False,
+):
+    """
+    Perform shape optimization with multiple random restarts.
+    Each restart samples a random initial guess within the bounds
+    and records the best result (lowest objective value).
+    """
+    best_result = None
+    best_obj = np.inf
+
+    for i in range(n_restarts):
+
+        x0 = np.array([
+            np.random.uniform(0.12, 0.52),  # ε
+            np.random.uniform(1.25, 2.75),  # κ
+            np.random.uniform(-0.5, 0.5),   # δ
+        ])
+        if optimize_A:
+            x0 = np.append(x0, np.random.uniform(-Amax, Amax))
+
+        print(f"\n=== Restart {i+1}/{n_restarts} ===")
+        print(f"Initial guess: {x0}")
+
+        result = optimise_shape(
+            model=model,
+            ITER=ITER,
+            target_beta_p=target_beta_p,
+            target_volume=target_volume,
+            target_qstar=target_qstar,
+            lambda_beta_p=lambda_beta_p,
+            lambda_volume=lambda_volume,
+            lambda_qstar=lambda_qstar,
+            initial_guess=x0,
+            bounds=bounds,
+            method=method,
+            maxiter=maxiter,
+            zoom=zoom,
+            objective_type=objective_type,
+            A_fixed=A_fixed,
+            optimize_A=optimize_A,
+        )
+
+        obj_val = result.fun
+        print(f"Restart {i+1} objective: {obj_val}")
+        print(f"Parameters: {result.x}")
+
+        if obj_val < best_obj:
+            best_obj = obj_val
+            best_result = result
+
+    print("\n=== Best result across all restarts ===")
+    print(f"Objective: {best_obj}")
+    print(f"Parameters: {best_result.x}")
+    return best_result
+
+
+
+
+def tune_lambdas(model, ITER, base_args, n_trials=10):
+    """
+    Randomly sample combinations of lambda_beta_p, lambda_volume, lambda_qstar
+    and pick the one yielding the lowest objective after short optimization runs.
+    """
+    best_lambdas = None
+    best_obj = np.inf
+
+    print("Initial guess: ", [0.398, 2.264, 0.444, 0.199])
+
+    for i in range(n_trials):
+        lam_beta = 10 ** np.random.uniform(-1, 2)     # 0.1 – 100
+        lam_vol  = 10 ** np.random.uniform(0, 2)      # 1 – 100
+        lam_q    = 10 ** np.random.uniform(-1, 1.5)   # 0.1 – 30
+
+        print(f"\n>>> Lambda trial {i+1}: βp={lam_beta:.2f}, V={lam_vol:.2f}, q*={lam_q:.2f}")
+
+        result = optimise_shape(
+            model=model,
+            ITER=ITER,
+            target_beta_p=base_args.target_beta_p,
+            target_volume=base_args.target_volume,
+            target_qstar=base_args.target_qstar,
+            lambda_beta_p=lam_beta,
+            lambda_volume=lam_vol,
+            lambda_qstar=lam_q,
+            initial_guess=[0.398, 2.264, 0.444, 0.199],
+            bounds=base_args.bounds,
+            method=base_args.method,
+            maxiter=200,    # shorter run for testing
+            zoom=base_args.zoom,
+            objective_type="beta_p_and_qstar",
+            A_fixed=base_args.A,
+            optimize_A=base_args.optimize_A,
+            print_metrics=base_args.print_metrics
+        )
+
+        print("Objective value: ", result.fun)
+        print("Parameters: ", result.x)
+
+        if result.fun < best_obj:
+            best_obj = result.fun
+            best_lambdas = (lam_beta, lam_vol, lam_q)
+
+    print("\n=== Best λ combination ===")
+    print(f"λβp={best_lambdas[0]:.2f}, λV={best_lambdas[1]:.2f}, λq*={best_lambdas[2]:.2f}")
+    print(f"Objective={best_obj:.4e}")
+    return best_lambdas
+
+
+
+
 if __name__ == "__main__":
     TIME = time.strftime("%m%d%H%M")
 
@@ -880,9 +1018,9 @@ if __name__ == "__main__":
     parser.add_argument("--target_beta_p", type=float, default=1.2)
     parser.add_argument("--target_volume", type=float, default=1.2)
     parser.add_argument("--target_qstar", type=float, default=1.57)
-    parser.add_argument("--lambda_beta_p", type=float, default=1)
-    parser.add_argument("--lambda_volume", type=float, default=10)
-    parser.add_argument("--lambda_qstar", type=float, default=3)
+    parser.add_argument("--lambda_beta_p", type=float, default=48.9)
+    parser.add_argument("--lambda_volume", type=float, default=1.61)
+    parser.add_argument("--lambda_qstar", type=float, default=0.11)
     parser.add_argument("--initial_guess", type=list, default=[0.32, 1.7, 0.33])
     parser.add_argument("--bounds", type=list, default=([eps0[0], kappa0[0], delta0[0]], [eps0[1], kappa0[1], delta0[1]]))
     parser.add_argument("--method", type=str, default="L-BFGS-B")
@@ -894,6 +1032,8 @@ if __name__ == "__main__":
     parser.add_argument("--A", type=float, default=-0.155)
     parser.add_argument("--optimize_A", type=bool, default=True)
     parser.add_argument("--objective_type", type=str, default="beta_p_and_qstar")
+    parser.add_argument("--n_restarts", type=int, default=10)
+    parser.add_argument("--print_metrics", type=bool, default=False)
     args = parser.parse_args()
 
 
@@ -968,7 +1108,7 @@ if __name__ == "__main__":
     ITER.get_BCs(args.A)
     ITER.solve_coefficients()
 
-    result = optimise_shape(model=model,
+    result = optimise_shape_with_restarts(model=model,
                             ITER=ITER,
                             target_beta_p=args.target_beta_p,
                             target_volume=args.target_volume,
@@ -976,14 +1116,19 @@ if __name__ == "__main__":
                             lambda_beta_p=args.lambda_beta_p,
                             lambda_volume=args.lambda_volume,
                             lambda_qstar=args.lambda_qstar,
-                            initial_guess=args.initial_guess,
-                            bounds=args.bounds,
+                            n_restarts=args.n_restarts,
+                            # initial_guess=args.initial_guess,
+                            # bounds=args.bounds,
+                            bounds = None,
                             method=args.method,
                             maxiter=args.maxiter,
                             zoom=args.zoom,
                             objective_type=args.objective_type,
                             A_fixed=args.A,
                             optimize_A=args.optimize_A)
+
+
+    # result = tune_lambdas(model, ITER, args, 50)
 
 
     print("\nOptimisation finished:\n", result)
