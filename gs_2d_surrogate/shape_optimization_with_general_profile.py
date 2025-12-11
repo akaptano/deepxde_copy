@@ -284,8 +284,8 @@ PEDESTAL_WIDTH = 0.08
 
 def _build_pedestal_alpha_ranges(n: int) -> Sequence[np.ndarray]:
     return [
-        np.linspace(0.1, 0.5, n),  # pressure scale (edge pressure)
-        np.linspace(1.5, 3.5, n),  # core/edge ratio
+        np.linspace(0.05, 0.2, n),  # α0: p_edge
+        np.linspace(0.3, 1.0, n),   # α1: p_core
     ]
 
 
