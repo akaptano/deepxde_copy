@@ -9,6 +9,37 @@ Key changes from original:
 
 Usage:
     python profile_pedestal_fixed.py --num_params 5
+    
+    # With scaled collocation points (num_domain * num_params)
+    python profile_pedestal_fixed.py --num_params 7 --scale_domain
+    
+    # Custom base domain points + scaling
+    python profile_pedestal_fixed.py --num_params 9 --num_domain 4096 --scale_domain
+    
+    # Disable scaling (default)
+    python profile_pedestal_fixed.py --num_params 9
+    
+    # Limit boundary points (e.g., for memory constraints)
+    python profile_pedestal_fixed.py --num_params 9 --max_bc_points 500000
+    
+    # Scale BC limit with num_params: 100000 * 9 = 900000
+    python profile_pedestal_fixed.py --num_params 9 --max_bc_points 100000 --scale_bc_points
+    
+    # No limit on boundary points (default)
+    python profile_pedestal_fixed.py --num_params 9
+
+
+CORRECTED pedestal profile for pPINN training.
+
+Key fix: Pressure profile orientation
+- Core (ψ << 0): HIGH pressure (p_core)
+- Edge (ψ → 0): LOW pressure (p_edge)
+- Pedestal is a DECREASE from core to edge
+
+This matches the physical H-mode profile where:
+- Hot, high-pressure plasma in the core
+- Steep gradient at the pedestal
+- Low pressure at the edge/SOL
 
 """
 
@@ -18,7 +49,6 @@ import numpy as np
 from matplotlib import pyplot as plt
 import sys
 import os
-from contextlib import nullcontext
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = "2"
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
@@ -36,7 +66,17 @@ parser.add_argument('--epochs_lbfgs', type=int, default=10000,
                     help='L-BFGS epochs')
 parser.add_argument('--output_dir', type=str, default=None,
                     help='Output directory (default: auto-generated)')
+parser.add_argument('--num_domain', type=int, default=2048,
+                    help='Base number of PDE collocation points')
+parser.add_argument('--scale_domain', action='store_true', default=False,
+                    help='Scale num_domain with num_params (num_domain * num_params)')
+parser.add_argument('--max_bc_points', type=int, default=None,
+                    help='Base maximum boundary points (default: None = no limit)')
+parser.add_argument('--scale_bc_points', action='store_true', default=False,
+                    help='Scale max_bc_points with num_params')
 args = parser.parse_args()
+
+print("Number of parameters:", args.num_params)
 
 # DeepXDE setup
 deepxde_path = '/scratch/yx3044/Projects/deepxde_copy'
@@ -69,7 +109,7 @@ dde.config.set_default_float("float64")
 
 
 # ============================================================
-# Shape parameter ranges (same as original)
+# Shape parameter ranges
 # ============================================================
 eps_deviation = 0.2
 kappa_deviation = 0.75
@@ -86,71 +126,76 @@ delta_vals = np.linspace(delta0[0], delta0[1], num_param)
 
 
 # ============================================================
-# FIXED Pedestal Profile Parameters
+# CORRECTED Pedestal Profile Parameters
 # ============================================================
 
-# Key insight: For the Solov'ev solution with A=-0.155, psi ranges roughly from
-# psi_min ≈ -0.1 to -0.3 (at magnetic axis) to psi=0 (at boundary).
-# The pedestal should be located between the edge and the core.
+# ψ convention in this code:
+#   ψ_axis < 0  (most negative at magnetic axis, i.e., core)
+#   ψ_boundary = 0  (at plasma edge)
+#
+# For H-mode pedestal:
+#   p_core = HIGH (in the core where ψ << 0)
+#   p_edge = LOW  (at the edge where ψ → 0)
+#   Pedestal location: ψ_ped ~ -0.08 (between core and edge)
 
-PSI_PED = -0.08         # Pedestal location (closer to edge for H-mode)
-WIDTH = 0.06            # Pedestal width in psi units (wider = gentler transition)
-
-# Pressure ranges - use parameters that give reasonable gradients
-# α0 = base pressure scale (controls overall magnitude)
-# α1 = pedestal-to-core pressure ratio (controls gradient strength)
+PSI_PED = -0.08         # Pedestal location
+WIDTH = 0.06            # Pedestal width in psi units
 
 NUM_ALPHA = 2
 INPUT_DIM = 2 + NUM_ALPHA + 3  # R, Z, α0, α1, eps, kappa, delta
 
 # Alpha ranges:
-# α0 (p_scale): Overall pressure magnitude [0.1, 0.5]
-# α1 (p_ratio): Core-to-edge pressure ratio [1.5, 4.0]
-#   - p_edge = p_scale
-#   - p_core = p_scale * p_ratio
-#   - This bounds the gradient: dp ~ p_scale * (p_ratio - 1) / WIDTH
+# α0 (p_edge): Edge pressure (LOW) [0.05, 0.2]
+# α1 (p_core): Core pressure (HIGH) [0.3, 1.0]
+#
+# Physical constraint: p_core > p_edge always
+# Gradient: dp/dψ ~ (p_edge - p_core) / WIDTH < 0 (pressure decreases outward)
 
 alpha_ranges = [
-    np.linspace(0.1, 0.5, num_param),    # α0: pressure scale
-    np.linspace(1.5, 4.0, num_param),    # α1: core/edge ratio
+    np.linspace(0.05, 0.2, num_param),   # α0: p_edge (low values)
+    np.linspace(0.3, 1.0, num_param),    # α1: p_core (high values)
 ]
 
 
 def p_of_psi_pedestal(psi, alpha):
     """
-    H-mode pedestal pressure profile.
+    CORRECTED H-mode pedestal pressure profile.
     
-    p(ψ) = p_core + (p_edge - p_core) * H(ψ)
-    
-    where H(ψ) is a smooth step function from 0 (core) to 1 (edge).
+    Physical behavior:
+    - p = p_core (HIGH) in core where ψ << 0
+    - p = p_edge (LOW) at edge where ψ → 0
+    - Smooth tanh transition at pedestal location ψ_ped
     
     Parameters:
     -----------
     psi : tensor
         Poloidal flux values, shape (N, 1)
+        Convention: ψ < 0 in core, ψ = 0 at boundary
     alpha : tensor
         Profile parameters, shape (N, 2)
-        alpha[:, 0] = p_scale (base pressure)
-        alpha[:, 1] = p_ratio (core/edge ratio)
+        alpha[:, 0] = p_edge (edge pressure, LOW)
+        alpha[:, 1] = p_core (core pressure, HIGH)
     
     Returns:
     --------
     p : tensor
         Pressure values, shape (N, 1)
     """
-    p_scale = alpha[:, 0:1]
-    p_ratio = alpha[:, 1:2]
+    p_edge = alpha[:, 0:1]  # LOW pressure at edge
+    p_core = alpha[:, 1:2]  # HIGH pressure in core
     
-    p_edge = p_scale
-    p_core = p_scale * p_ratio
-    
-    # Smooth step function: H(ψ) = 0.5 * (1 + tanh((ψ - ψ_ped) / Δ))
-    # H → 0 as ψ → -∞ (deep core)
-    # H → 1 as ψ → 0 (edge)
+    # Smooth step function:
+    # H(ψ) = 0.5 * (1 + tanh((ψ - ψ_ped) / Δ))
+    # 
+    # When ψ << ψ_ped (deep core): H → 0
+    # When ψ >> ψ_ped (near edge): H → 1
     arg = (psi - PSI_PED) / WIDTH
     H = 0.5 * (1.0 + tf.tanh(arg))
     
-    # Pressure: high in core, low at edge
+    # CORRECTED pressure formula:
+    # p = p_core when H=0 (core)
+    # p = p_edge when H=1 (edge)
+    # p = p_core * (1 - H) + p_edge * H
     p = p_core * (1.0 - H) + p_edge * H
     
     return p
@@ -159,6 +204,8 @@ def p_of_psi_pedestal(psi, alpha):
 def dp_dpsi_pedestal(psi, alpha):
     """
     Compute dp/dψ using automatic differentiation.
+    
+    Note: dp/dψ should be NEGATIVE (pressure decreases as ψ increases toward edge)
     """
     with tf.GradientTape() as tape:
         tape.watch(psi)
@@ -172,10 +219,10 @@ def pde_pedestal(x, u):
     
     Δ*ψ = -μ₀R²(dp/dψ) - F(dF/dψ)
     
-    For the simplified case (F = const), this becomes:
+    For simplified case (F = const):
     ψ_RR - ψ_R/R + ψ_ZZ = -R² * dp/dψ
     
-    Note: We use the standard GS convention where the RHS is the source.
+    Since dp/dψ < 0 (pressure decreases outward), the RHS is positive.
     """
     psi = u[:, 0:1]
     R = x[:, 0:1]
@@ -188,12 +235,10 @@ def pde_pedestal(x, u):
     # Extract pressure parameters
     alpha = x[:, 2:2+NUM_ALPHA]
     
-    # Pressure gradient
+    # Pressure gradient (should be negative)
     dpdpsi = dp_dpsi_pedestal(psi, alpha)
     
     # GS equation residual
-    # Note: Standard form is Δ*ψ + R²p'(ψ) = 0
-    # So residual = ψ_RR - ψ_R/R + ψ_ZZ + R² * dp/dψ
     GS = psi_RR - psi_R/R + psi_ZZ + R**2 * dpdpsi
     
     return GS
@@ -212,22 +257,22 @@ def gen_boundary_data(num_boundary_pts):
     for eps_val in eps_vals:
         for kappa_val in kappa_vals:
             for delta_val in delta_vals:
-                # Boundary parametric curve
                 Rb = 1 + eps_val * np.cos(tau + np.arcsin(delta_val) * np.sin(tau))
                 Zb = eps_val * kappa_val * np.sin(tau)
                 
-                # Loop over pressure parameters
-                for a0 in alpha_ranges[0]:
-                    for a1 in alpha_ranges[1]:
-                        R_list.append(Rb)
-                        Z_list.append(Zb)
-                        alpha_list.append(np.column_stack([
-                            a0 * np.ones(N),
-                            a1 * np.ones(N)
-                        ]))
-                        eps_list.append(eps_val * np.ones((N, 1)))
-                        kappa_list.append(kappa_val * np.ones((N, 1)))
-                        delta_list.append(delta_val * np.ones((N, 1)))
+                for a0 in alpha_ranges[0]:  # p_edge
+                    for a1 in alpha_ranges[1]:  # p_core
+                        # Only include if p_core > p_edge (physical constraint)
+                        if a1 > a0:
+                            R_list.append(Rb)
+                            Z_list.append(Zb)
+                            alpha_list.append(np.column_stack([
+                                a0 * np.ones(N),
+                                a1 * np.ones(N)
+                            ]))
+                            eps_list.append(eps_val * np.ones((N, 1)))
+                            kappa_list.append(kappa_val * np.ones((N, 1)))
+                            delta_list.append(delta_val * np.ones((N, 1)))
     
     R_flat = np.concatenate(R_list)[:, None]
     Z_flat = np.concatenate(Z_list)[:, None]
@@ -240,40 +285,100 @@ def gen_boundary_data(num_boundary_pts):
         R_flat, Z_flat, alpha_flat, eps_flat, kappa_flat, delta_flat
     ])
     
-    # Boundary condition: ψ = 0
     u_boundary = np.zeros((x_boundary.shape[0], 1))
     
     print(f"Generated {len(x_boundary)} boundary points")
-    print(f"  Shape: {x_boundary.shape}")
     
     return x_boundary, u_boundary
 
 
 # ============================================================
-# Import the HyperEllipticalToroid geometry class
+# Visualization of CORRECTED profile
 # ============================================================
 
-# The HyperEllipticalToroid class from geometry_nd.py properly handles:
-# - Boundary point generation for all parameter combinations
-# - Inside/outside checking for the D-shaped domain
-# - Random point sampling within the geometry
+def plot_pressure_profile():
+    """
+    Plot the corrected pressure profile to verify orientation.
+    """
+    import matplotlib.pyplot as plt
+    
+    psi_vals = np.linspace(-0.5, 0.1, 500)
+    
+    # Test parameters
+    p_edge = 0.1   # LOW at edge
+    p_core = 0.8   # HIGH in core
+    
+    # Compute H
+    H = 0.5 * (1.0 + np.tanh((psi_vals - PSI_PED) / WIDTH))
+    
+    # Compute pressure (CORRECTED)
+    p = p_core * (1.0 - H) + p_edge * H
+    
+    # Compute gradient
+    dpdpsi = (p_edge - p_core) / WIDTH * 0.5 * (1 - np.tanh((psi_vals - PSI_PED) / WIDTH)**2)
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Pressure profile
+    ax1 = axes[0]
+    ax1.plot(psi_vals, p, 'b-', lw=2)
+    ax1.axvline(x=0, color='r', ls='--', label='ψ=0 (boundary)')
+    ax1.axvline(x=PSI_PED, color='orange', ls='--', label=f'ψ_ped={PSI_PED}')
+    ax1.axhline(y=p_core, color='green', ls=':', alpha=0.5, label=f'p_core={p_core}')
+    ax1.axhline(y=p_edge, color='purple', ls=':', alpha=0.5, label=f'p_edge={p_edge}')
+    ax1.set_xlabel('ψ', fontsize=12)
+    ax1.set_ylabel('p(ψ)', fontsize=12)
+    ax1.set_title(f'CORRECTED Pressure Profile\np_edge={p_edge}, p_core={p_core}', fontsize=14)
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Add annotations
+    ax1.annotate('Core\n(HIGH p)', xy=(-0.4, p_core-0.05), fontsize=11, ha='center')
+    ax1.annotate('Edge\n(LOW p)', xy=(0.05, p_edge+0.05), fontsize=11, ha='center')
+    ax1.annotate('Pedestal\n(steep gradient)', xy=(PSI_PED, 0.5*(p_core+p_edge)), 
+                fontsize=10, ha='center',
+                arrowprops=dict(arrowstyle='->', color='black'),
+                xytext=(PSI_PED-0.15, 0.5*(p_core+p_edge)))
+    
+    # Gradient profile
+    ax2 = axes[1]
+    ax2.plot(psi_vals, dpdpsi, 'r-', lw=2)
+    ax2.axvline(x=0, color='r', ls='--', label='ψ=0 (boundary)')
+    ax2.axvline(x=PSI_PED, color='orange', ls='--', label=f'ψ_ped={PSI_PED}')
+    ax2.axhline(y=0, color='gray', ls='-', alpha=0.5)
+    ax2.set_xlabel('ψ', fontsize=12)
+    ax2.set_ylabel('dp/dψ', fontsize=12)
+    ax2.set_title('Pressure Gradient', fontsize=14)
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    # Add annotation for gradient sign
+    ax2.annotate('dp/dψ < 0\n(pressure decreases\ntoward edge)', 
+                xy=(PSI_PED, dpdpsi.min()/2), fontsize=10, ha='center')
+    
+    plt.tight_layout()
+    plt.savefig('pressure_profile_corrected.png', dpi=150)
+    plt.close()
+    print("Saved: pressure_profile_corrected.png")
+    
+    # Print verification
+    print(f"\nVerification:")
+    print(f"  At ψ = -0.4 (core):  p = {p_core * (1 - 0.5*(1+np.tanh((-0.4-PSI_PED)/WIDTH))) + p_edge * 0.5*(1+np.tanh((-0.4-PSI_PED)/WIDTH)):.3f}")
+    print(f"  At ψ = 0.0 (edge):   p = {p_core * (1 - 0.5*(1+np.tanh((0-PSI_PED)/WIDTH))) + p_edge * 0.5*(1+np.tanh((0-PSI_PED)/WIDTH)):.3f}")
+    print(f"  Expected: core ~ {p_core}, edge ~ {p_edge}")
 
-# Note: We need to make sure deepxde can find the geometry_nd module
-# It should be in the deepxde/geometry/ directory
-
-
-# ============================================================
-# Main training script
-# ============================================================
 
 if __name__ == "__main__":
+    
+    # First, generate and show the corrected pressure profile
+    plot_pressure_profile()
     
     TIME = time.strftime("%m%d%Y_%H%M")
     
     if args.output_dir:
         PATH = args.output_dir
     else:
-        PATH = f"/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_models_new/run_{TIME}_pedestal_fixed"
+        PATH = f"/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_models_new/run_{TIME}_pedestal_corrected_{args.num_params}"
     
     os.makedirs(PATH, exist_ok=True)
     print(f"Output directory: {PATH}")
@@ -284,22 +389,26 @@ if __name__ == "__main__":
     print("\nGenerating boundary data...")
     x_bc, u_bc = gen_boundary_data(num_boundary_pts=201)
     
-    # Subsample if too large
-    MAX_BC_POINTS = 200000
-    if len(x_bc) > MAX_BC_POINTS:
-        idx = np.random.choice(len(x_bc), MAX_BC_POINTS, replace=False)
-        x_bc = x_bc[idx]
-        u_bc = u_bc[idx]
-        print(f"Subsampled to {MAX_BC_POINTS} boundary points")
+    # Optionally subsample boundary points
+    if args.max_bc_points is not None:
+        if args.scale_bc_points:
+            actual_max_bc = args.max_bc_points * num_param
+        else:
+            actual_max_bc = args.max_bc_points
+        
+        if len(x_bc) > actual_max_bc:
+            idx = np.random.choice(len(x_bc), actual_max_bc, replace=False)
+            x_bc = x_bc[idx]
+            u_bc = u_bc[idx]
+            print(f"Subsampled to {actual_max_bc} boundary points")
     
     bc = dde.PointSetBC(x_bc, u_bc)
     
     # --------------------------------------------------------
-    # Create geometry using HyperEllipticalToroid
+    # Create geometry
     # --------------------------------------------------------
     print("\nSetting up geometry and PDE...")
     
-    # The HyperEllipticalToroid class expects alpha_ranges as a list of arrays
     geom = dde.geometry.HyperEllipticalToroid(
         eps_range=eps0,
         kappa_range=kappa0,
@@ -309,11 +418,16 @@ if __name__ == "__main__":
         psi_boundary_points=200
     )
     
+    if args.scale_domain:
+        actual_num_domain = args.num_domain * num_param
+    else:
+        actual_num_domain = args.num_domain
+    
     data = dde.data.PDE(
         geom,
         pde_pedestal,
         [bc],
-        num_domain=2048,
+        num_domain=actual_num_domain,
         num_boundary=0,
         num_test=100,
         train_distribution="LHS"
@@ -357,11 +471,11 @@ if __name__ == "__main__":
     
     from deepxde.optimizers import set_LBFGS_options
     set_LBFGS_options(
-        maxiter=20000,
+        maxiter=50000,
         maxcor=50,
         ftol=0,
         gtol=1e-10,
-        maxfun=15000,
+        maxfun=100000,
         maxls=50,
     )
     
@@ -386,18 +500,16 @@ if __name__ == "__main__":
     print("="*60)
     
     # --------------------------------------------------------
-    # Quick validation plot
+    # Validation plot
     # --------------------------------------------------------
     print("\nGenerating validation plot...")
     
-    # Test at center of parameter space
     eps_test = 0.32
     kap_test = 2.0
     delt_test = 0.0
-    a0_test = 0.3
-    a1_test = 2.5
+    a0_test = 0.1   # p_edge (LOW)
+    a1_test = 0.6   # p_core (HIGH)
     
-    # Create evaluation grid
     n_grid = 100
     r = np.linspace(1 - 1.5*eps_test, 1 + 1.5*eps_test, n_grid)
     z = np.linspace(-1.5*eps_test*kap_test, 1.5*eps_test*kap_test, n_grid)
@@ -406,23 +518,20 @@ if __name__ == "__main__":
     X_test = np.zeros((n_grid**2, INPUT_DIM))
     X_test[:, 0] = RR.ravel()
     X_test[:, 1] = ZZ.ravel()
-    X_test[:, 2] = a0_test
-    X_test[:, 3] = a1_test
+    X_test[:, 2] = a0_test  # p_edge
+    X_test[:, 3] = a1_test  # p_core
     X_test[:, 4] = eps_test
     X_test[:, 5] = kap_test
     X_test[:, 6] = delt_test
     
     psi_pred = model.predict(X_test).reshape(n_grid, n_grid)
     
-    # Plot
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
     
-    # Heatmap
     ax1 = axes[0]
     pcm = ax1.pcolormesh(RR, ZZ, psi_pred, shading='auto', cmap='RdBu_r')
     plt.colorbar(pcm, ax=ax1, label='ψ')
     
-    # Boundary
     tau = np.linspace(0, 2*np.pi, 200)
     R_bnd = 1 + eps_test * np.cos(tau + np.arcsin(delt_test) * np.sin(tau))
     Z_bnd = eps_test * kap_test * np.sin(tau)
@@ -430,17 +539,15 @@ if __name__ == "__main__":
     
     ax1.set_xlabel('R')
     ax1.set_ylabel('Z')
-    ax1.set_title(f'ψ field (eps={eps_test}, kappa={kap_test}, delta={delt_test})')
+    ax1.set_title(f'ψ field (eps={eps_test}, kappa={kap_test}, delta={delt_test}, p_edge={a0_test}, p_core={a1_test})')
     ax1.set_aspect('equal')
     ax1.legend()
     
-    # Contours
     ax2 = axes[1]
     levels = np.linspace(psi_pred.min(), psi_pred.max(), 20)
     cs = ax2.contour(RR, ZZ, psi_pred, levels=levels, cmap='coolwarm')
     ax2.clabel(cs, inline=True, fontsize=8, fmt='%.3f')
     
-    # Try ψ=0 contour
     try:
         cs0 = ax2.contour(RR, ZZ, psi_pred, levels=[0.0], colors='green', linewidths=3)
         ax2.plot(R_bnd, Z_bnd, 'k--', lw=2, label='Boundary')
