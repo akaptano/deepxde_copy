@@ -1,17 +1,17 @@
 """
-Diagnostic script for pedestal profile pPINN models.
+Diagnostic script for the CORRECTED pedestal profile pPINN models.
 
-This script helps identify why no ψ=0 contour is found during shape optimization.
+This script helps analyze the trained pedestal pPINN model and verify
+that the pressure profile and psi field are correct.
 
 Usage:
-    python pedestal_fix/diagnose_pedestal.py --model_path /path/to/checkpoint.ckpt
+    python diagnose_pedestal_corrected.py --model_path /path/to/checkpoint.ckpt
 
-It will generate several diagnostic plots:
-1. ψ field heatmap with contour lines
-2. ψ values along the midplane (Z=0)
-3. Histogram of ψ values
-4. Pressure profile p(ψ) for the given alpha parameters
-5. dp/dψ profile (the source term driver)
+It will generate diagnostic plots for:
+1. Psi field heatmap with contour lines
+2. Psi values along the midplane (Z=0)
+3. Pressure profile p(psi) for the given alpha parameters
+4. dp/dpsi profile (the source term driver)
 """
 
 import os
@@ -19,8 +19,6 @@ import sys
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import cm
-from mpl_toolkits.mplot3d import Axes3D
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
@@ -37,11 +35,11 @@ import deepxde as dde
 dde.config.set_default_float("float64")
 
 # ============================================================
-# Pedestal profile parameters (must match profile.py)
+# CORRECTED Pedestal profile parameters (must match profile_pedestal_fixed.py)
 # ============================================================
-PSI_PED_CONST = -0.1
-WIDTH_CONST = 0.05
-STEEPNESS_CONST = 4.0
+PSI_PED = -0.08    # Pedestal location (CORRECTED)
+WIDTH = 0.06       # Pedestal width (CORRECTED)
+# Note: No STEEPNESS factor in the new version!
 
 # Shape parameter ranges
 eps_deviation = 0.2
@@ -52,64 +50,58 @@ kappa0 = (2 - kappa_deviation, 2 + kappa_deviation)
 delta0 = (0 - delta_deviation, 0 + delta_deviation)
 
 
-def p_of_psi_pedestal_numpy(psi, p_ped, p_core):
-    """NumPy version of the pedestal pressure profile."""
-    arg = STEEPNESS_CONST * (psi - PSI_PED_CONST) / WIDTH_CONST
-    return p_core + (p_ped - p_core) * 0.5 * (1 - np.tanh(arg))
+def p_of_psi_pedestal_numpy(psi, p_edge, p_core):
+    """
+    CORRECTED NumPy version of the pedestal pressure profile.
+    
+    Matches the TensorFlow version in profile_pedestal_fixed.py:
+    - p = p_core when psi << 0 (core)
+    - p = p_edge when psi -> 0 (edge)
+    """
+    arg = (psi - PSI_PED) / WIDTH
+    H = 0.5 * (1.0 + np.tanh(arg))
+    return p_core * (1.0 - H) + p_edge * H
 
 
-def dp_dpsi_pedestal_numpy(psi, p_ped, p_core):
-    """NumPy version of dp/dpsi for pedestal profile."""
-    arg = STEEPNESS_CONST * (psi - PSI_PED_CONST) / WIDTH_CONST
+def dp_dpsi_pedestal_numpy(psi, p_edge, p_core):
+    """
+    CORRECTED NumPy version of dp/dpsi for pedestal profile.
+    
+    Analytical derivative of p_of_psi_pedestal_numpy.
+    """
+    arg = (psi - PSI_PED) / WIDTH
     sech2 = 1.0 / np.cosh(arg)**2
-    return -(p_ped - p_core) * 0.5 * (STEEPNESS_CONST / WIDTH_CONST) * sech2
+    # d/dpsi [p_core * (1-H) + p_edge * H] = (p_edge - p_core) * dH/dpsi
+    # dH/dpsi = 0.5 * (1/WIDTH) * sech^2(arg)
+    return (p_edge - p_core) * 0.5 * (1.0 / WIDTH) * sech2
 
 
-def create_diagnostic_plots(model, eps, kappa, delta, alpha, save_dir, grid_size=200, zoom=1.5):
+def create_diagnostic_plots(model, eps, kappa, delta, alpha, save_dir, grid_size=200):
     """
     Create comprehensive diagnostic plots for a pedestal pPINN model.
-    
-    Parameters:
-    -----------
-    model : dde.Model
-        The trained DeepXDE model
-    eps, kappa, delta : float
-        Shape parameters
-    alpha : array-like
-        Pressure profile parameters [p_ped, p_core]
-    save_dir : str
-        Directory to save plots
-    grid_size : int
-        Grid resolution for plotting
-    zoom : float
-        Zoom factor for the grid extent
     """
     os.makedirs(save_dir, exist_ok=True)
     
-    p_ped, p_core = alpha[0], alpha[1]
+    p_edge, p_core = alpha[0], alpha[1]
     
     # Create evaluation grid
-    inner_point = 1 - 1.1 * eps * (1 + zoom)
-    outer_point = 1 + 1.1 * eps * (1 + zoom)
-    low_point = -1.1 * kappa * eps * (1 + zoom)
-    high_point = 1.1 * kappa * eps * (1 + zoom)
-    
-    r = np.linspace(inner_point, outer_point, grid_size)
-    z = np.linspace(low_point, high_point, grid_size)
+    margin = 0.15
+    r = np.linspace(1 - eps - margin, 1 + eps + margin, grid_size)
+    z = np.linspace(-eps * kappa - margin, eps * kappa + margin, grid_size)
     RR, ZZ = np.meshgrid(r, z, indexing="ij")
     
-    # Build input tensor: [R, Z, alpha0, alpha1, eps, kappa, delta]
+    # Build input tensor: [R, Z, p_edge, p_core, eps, kappa, delta]
     N = grid_size * grid_size
     X_in = np.zeros((N, 7))
     X_in[:, 0] = RR.ravel()
     X_in[:, 1] = ZZ.ravel()
-    X_in[:, 2] = p_ped
+    X_in[:, 2] = p_edge
     X_in[:, 3] = p_core
     X_in[:, 4] = eps
     X_in[:, 5] = kappa
     X_in[:, 6] = delta
     
-    # Predict ψ
+    # Predict psi
     psi_pred = model.predict(X_in).reshape(grid_size, grid_size)
     
     # Analytic boundary for reference
@@ -118,205 +110,169 @@ def create_diagnostic_plots(model, eps, kappa, delta, alpha, save_dir, grid_size
     Z_bnd = eps * kappa * np.sin(tau)
     
     # ============================================================
-    # Plot 1: ψ field heatmap with contours
+    # Plot 1: Psi field and contours
     # ============================================================
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
     
     # Heatmap
     ax1 = axes[0]
     pcm = ax1.pcolormesh(RR, ZZ, psi_pred, shading='auto', cmap='RdBu_r')
-    ax1.plot(R_bnd, Z_bnd, 'k--', lw=2, label='Analytic boundary')
+    ax1.plot(R_bnd, Z_bnd, 'k--', lw=2, label='Boundary')
     ax1.set_xlabel('R')
     ax1.set_ylabel('Z')
-    ax1.set_title(f'ψ field\neps={eps:.3f}, kappa={kappa:.3f}, delta={delta:.3f}\nalpha=[{p_ped:.2f}, {p_core:.2f}]')
+    ax1.set_title(f'psi field (p_edge={p_edge}, p_core={p_core})')
     ax1.set_aspect('equal')
     ax1.legend()
-    plt.colorbar(pcm, ax=ax1, label='ψ')
+    plt.colorbar(pcm, ax=ax1, label='psi')
     
     # Contours
     ax2 = axes[1]
     psi_min, psi_max = psi_pred.min(), psi_pred.max()
-    print(f"\nψ statistics:")
-    print(f"  min(ψ) = {psi_min:.6f}")
-    print(f"  max(ψ) = {psi_max:.6f}")
-    print(f"  mean(ψ) = {psi_pred.mean():.6f}")
     
-    # Check if zero is in the range
-    if psi_min < 0 < psi_max:
-        print("  ✓ Zero crossing exists in ψ field")
-        levels = np.linspace(psi_min, psi_max, 20)
-        # Ensure 0 is in the levels
-        if 0 not in levels:
-            levels = np.sort(np.append(levels, 0))
-    else:
-        print(f"  ✗ NO zero crossing! ψ range is [{psi_min:.4f}, {psi_max:.4f}]")
-        levels = np.linspace(psi_min, psi_max, 20)
-    
+    levels = np.linspace(psi_min, psi_max, 20)
     cs = ax2.contour(RR, ZZ, psi_pred, levels=levels, cmap='coolwarm')
     ax2.clabel(cs, inline=True, fontsize=8, fmt='%.3f')
     
-    # Try to plot ψ=0 contour specifically
-    try:
+    # Plot psi=0 contour
+    if psi_min < 0 < psi_max:
         cs0 = ax2.contour(RR, ZZ, psi_pred, levels=[0.0], colors='green', linewidths=3)
-        if cs0.collections and cs0.collections[0].get_paths():
-            print("  ✓ ψ=0 contour extracted successfully")
-            n_paths = len(cs0.collections[0].get_paths())
-            print(f"    Found {n_paths} contour path(s)")
-        else:
-            print("  ✗ ψ=0 contour extraction failed (no paths)")
-    except Exception as e:
-        print(f"  ✗ Error extracting ψ=0 contour: {e}")
     
-    ax2.plot(R_bnd, Z_bnd, 'k--', lw=2, label='Analytic boundary')
+    ax2.plot(R_bnd, Z_bnd, 'k--', lw=2, label='Boundary')
     ax2.set_xlabel('R')
     ax2.set_ylabel('Z')
-    ax2.set_title('ψ contours (green = ψ=0)')
+    ax2.set_title('psi contours (green = psi=0)')
     ax2.set_aspect('equal')
     ax2.legend()
-    
-    # Histogram
-    ax3 = axes[2]
-    ax3.hist(psi_pred.ravel(), bins=100, density=True, alpha=0.7)
-    ax3.axvline(x=0, color='r', linestyle='--', lw=2, label='ψ=0')
-    ax3.axvline(x=psi_min, color='b', linestyle=':', lw=1, label=f'min={psi_min:.4f}')
-    ax3.axvline(x=psi_max, color='g', linestyle=':', lw=1, label=f'max={psi_max:.4f}')
-    ax3.set_xlabel('ψ')
-    ax3.set_ylabel('Density')
-    ax3.set_title('ψ value distribution')
-    ax3.legend()
     
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'psi_field_diagnostics.png'), dpi=150)
     plt.close()
-    print(f"\nSaved: {save_dir}/psi_field_diagnostics.png")
+    
+    print(f"\nPsi statistics:")
+    print(f"  min(psi) = {psi_min:.6f}")
+    print(f"  max(psi) = {psi_max:.6f}")
+    if psi_min < 0 < psi_max:
+        print("  [OK] Zero crossing exists")
+    else:
+        print("  [WARNING] No zero crossing!")
     
     # ============================================================
     # Plot 2: Midplane cut (Z=0)
     # ============================================================
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    # Find Z=0 index
     z_idx = np.argmin(np.abs(z))
     psi_midplane = psi_pred[:, z_idx]
     
-    ax.plot(r, psi_midplane, 'b-', lw=2, label='ψ(R, Z=0)')
-    ax.axhline(y=0, color='r', linestyle='--', lw=1, label='ψ=0')
-    
-    # Mark the expected boundary locations
-    R_inner = 1 - eps
-    R_outer = 1 + eps
-    ax.axvline(x=R_inner, color='g', linestyle=':', lw=1, label=f'R_inner={R_inner:.3f}')
-    ax.axvline(x=R_outer, color='g', linestyle=':', lw=1, label=f'R_outer={R_outer:.3f}')
+    ax.plot(r, psi_midplane, 'b-', lw=2, label='psi(R, Z=0)')
+    ax.axhline(y=0, color='r', linestyle='--', lw=1, label='psi=0')
+    ax.axvline(x=1-eps, color='g', linestyle=':', lw=1, label=f'R_inner={1-eps:.3f}')
+    ax.axvline(x=1+eps, color='g', linestyle=':', lw=1, label=f'R_outer={1+eps:.3f}')
     
     ax.set_xlabel('R')
-    ax.set_ylabel('ψ')
-    ax.set_title(f'Midplane cut (Z=0)\nalpha=[{p_ped:.2f}, {p_core:.2f}]')
+    ax.set_ylabel('psi')
+    ax.set_title(f'Midplane cut (Z=0)')
     ax.legend()
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'psi_midplane_cut.png'), dpi=150)
     plt.close()
-    print(f"Saved: {save_dir}/psi_midplane_cut.png")
     
     # ============================================================
-    # Plot 3: Pressure profile analysis
+    # Plot 3: CORRECTED Pressure profile analysis
     # ============================================================
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     
     psi_range = np.linspace(-0.5, 0.1, 500)
     
-    # p(ψ)
+    # p(psi) - CORRECTED
     ax1 = axes[0]
-    p_vals = p_of_psi_pedestal_numpy(psi_range, p_ped, p_core)
+    p_vals = p_of_psi_pedestal_numpy(psi_range, p_edge, p_core)
     ax1.plot(psi_range, p_vals, 'b-', lw=2)
-    ax1.axvline(x=0, color='r', linestyle='--', lw=1, label='ψ=0 (boundary)')
-    ax1.axvline(x=PSI_PED_CONST, color='orange', linestyle='--', lw=1, 
-                label=f'ψ_ped={PSI_PED_CONST}')
-    ax1.set_xlabel('ψ')
-    ax1.set_ylabel('p(ψ)')
-    ax1.set_title(f'Pressure profile\np_ped={p_ped:.2f}, p_core={p_core:.2f}')
+    ax1.axvline(x=0, color='r', linestyle='--', lw=1, label='psi=0 (boundary)')
+    ax1.axvline(x=PSI_PED, color='orange', linestyle='--', lw=1, 
+                label=f'psi_ped={PSI_PED}')
+    ax1.axhline(y=p_core, color='green', linestyle=':', alpha=0.7, label=f'p_core={p_core}')
+    ax1.axhline(y=p_edge, color='purple', linestyle=':', alpha=0.7, label=f'p_edge={p_edge}')
+    ax1.set_xlabel('psi')
+    ax1.set_ylabel('p(psi)')
+    ax1.set_title(f'CORRECTED Pressure profile\np_edge={p_edge:.2f}, p_core={p_core:.2f}')
     ax1.legend()
     ax1.grid(True, alpha=0.3)
     
-    # dp/dψ
+    # Annotate core and edge
+    ax1.annotate('Core\n(HIGH p)', xy=(-0.35, p_core*0.95), fontsize=10, ha='center', color='green')
+    ax1.annotate('Edge\n(LOW p)', xy=(0.05, p_edge*1.5), fontsize=10, ha='center', color='purple')
+    
+    # dp/dpsi - CORRECTED
     ax2 = axes[1]
-    dp_vals = dp_dpsi_pedestal_numpy(psi_range, p_ped, p_core)
+    dp_vals = dp_dpsi_pedestal_numpy(psi_range, p_edge, p_core)
     ax2.plot(psi_range, dp_vals, 'r-', lw=2)
-    ax2.axvline(x=0, color='r', linestyle='--', lw=1, label='ψ=0 (boundary)')
-    ax2.axvline(x=PSI_PED_CONST, color='orange', linestyle='--', lw=1,
-                label=f'ψ_ped={PSI_PED_CONST}')
-    ax2.set_xlabel('ψ')
-    ax2.set_ylabel('dp/dψ')
-    ax2.set_title(f'Pressure gradient (GS source term)\nMax |dp/dψ| = {np.max(np.abs(dp_vals)):.2f}')
+    ax2.axvline(x=0, color='r', linestyle='--', lw=1, label='psi=0 (boundary)')
+    ax2.axvline(x=PSI_PED, color='orange', linestyle='--', lw=1,
+                label=f'psi_ped={PSI_PED}')
+    ax2.axhline(y=0, color='gray', linestyle='-', alpha=0.5)
+    ax2.set_xlabel('psi')
+    ax2.set_ylabel('dp/dpsi')
+    ax2.set_title(f'Pressure gradient\nMax |dp/dpsi| = {np.max(np.abs(dp_vals)):.2f}')
     ax2.legend()
     ax2.grid(True, alpha=0.3)
+    
+    # Annotate sign
+    ax2.annotate('dp/dpsi < 0\n(p decreases toward edge)', 
+                xy=(PSI_PED, dp_vals.min()*0.5), fontsize=10, ha='center')
     
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'pressure_profile_analysis.png'), dpi=150)
     plt.close()
-    print(f"Saved: {save_dir}/pressure_profile_analysis.png")
+    
+    print(f"\nPressure profile (CORRECTED formula):")
+    print(f"  p_edge = {p_edge}")
+    print(f"  p_core = {p_core}")
+    print(f"  PSI_PED = {PSI_PED}")
+    print(f"  WIDTH = {WIDTH}")
+    print(f"  Max |dp/dpsi| = {np.max(np.abs(dp_vals)):.2f}")
+    
+    # Verify pressure values
+    p_at_core = p_of_psi_pedestal_numpy(-0.4, p_edge, p_core)
+    p_at_edge = p_of_psi_pedestal_numpy(0.0, p_edge, p_core)
+    print(f"\nVerification:")
+    print(f"  p(psi=-0.4) [core] = {p_at_core:.4f} (expected ~ {p_core})")
+    print(f"  p(psi=0.0) [edge] = {p_at_edge:.4f} (expected ~ {p_edge})")
+    
+    if p_at_core > p_at_edge:
+        print("  [OK] Pressure profile orientation correct (core > edge)")
+    else:
+        print("  [ERROR] Pressure profile inverted!")
     
     # ============================================================
-    # Plot 4: 3D surface plot of ψ
+    # Plot 4: Compare with what the psi field actually produces
     # ============================================================
-    fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111, projection='3d')
+    fig, ax = plt.subplots(figsize=(10, 6))
     
-    # Downsample for cleaner 3D plot
-    stride = max(1, grid_size // 50)
-    surf = ax.plot_surface(RR[::stride, ::stride], ZZ[::stride, ::stride], 
-                           psi_pred[::stride, ::stride],
-                           cmap='RdBu_r', alpha=0.8)
+    # Get psi values from the model at midplane
+    psi_from_model = psi_midplane
     
-    # Add ψ=0 plane
-    if psi_min < 0 < psi_max:
-        ax.plot_surface(RR[::stride, ::stride], ZZ[::stride, ::stride],
-                       np.zeros_like(RR[::stride, ::stride]),
-                       alpha=0.3, color='green')
+    # Compute what pressure would be at those psi values
+    p_from_model_psi = p_of_psi_pedestal_numpy(psi_from_model, p_edge, p_core)
+    
+    ax.plot(r, p_from_model_psi, 'b-', lw=2, label='p(psi_model(R, Z=0))')
+    ax.axvline(x=1-eps, color='g', linestyle=':', lw=1, label='Inner boundary')
+    ax.axvline(x=1+eps, color='g', linestyle=':', lw=1, label='Outer boundary')
+    ax.axvline(x=1.0, color='orange', linestyle='--', lw=1, label='Magnetic axis (R=1)')
     
     ax.set_xlabel('R')
-    ax.set_ylabel('Z')
-    ax.set_zlabel('ψ')
-    ax.set_title('3D ψ field (green plane = ψ=0)')
-    fig.colorbar(surf, ax=ax, shrink=0.5, label='ψ')
+    ax.set_ylabel('p')
+    ax.set_title('Pressure profile along midplane (from model psi)')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'psi_3d_surface.png'), dpi=150)
+    plt.savefig(os.path.join(save_dir, 'pressure_along_midplane.png'), dpi=150)
     plt.close()
-    print(f"Saved: {save_dir}/psi_3d_surface.png")
     
-    # ============================================================
-    # Print summary
-    # ============================================================
-    print("\n" + "="*60)
-    print("DIAGNOSTIC SUMMARY")
-    print("="*60)
-    print(f"Shape parameters: eps={eps}, kappa={kappa}, delta={delta}")
-    print(f"Pressure params: p_ped={p_ped}, p_core={p_core}")
-    print(f"Pedestal constants: PSI_PED={PSI_PED_CONST}, WIDTH={WIDTH_CONST}, STEEP={STEEPNESS_CONST}")
-    print(f"\nψ range: [{psi_min:.6f}, {psi_max:.6f}]")
-    
-    if psi_min > 0:
-        print("\n⚠️  PROBLEM: ψ is entirely positive!")
-        print("   The boundary condition ψ=0 is not being satisfied.")
-        print("   Possible causes:")
-        print("   1. Network not trained long enough")
-        print("   2. Pressure profile parameters too extreme")
-        print("   3. Boundary condition weight too low")
-    elif psi_max < 0:
-        print("\n⚠️  PROBLEM: ψ is entirely negative!")
-        print("   The ψ=0 level set doesn't exist in the domain.")
-    else:
-        print("\n✓ ψ field has proper zero crossing")
-    
-    # Check pressure gradient magnitude
-    max_dp = np.max(np.abs(dp_dpsi_pedestal_numpy(np.linspace(-0.3, 0, 100), p_ped, p_core)))
-    print(f"\nMax |dp/dψ| near boundary: {max_dp:.2f}")
-    if max_dp > 100:
-        print("⚠️  WARNING: Very large pressure gradient!")
-        print("   This can cause numerical instability.")
-        print("   Consider reducing (p_core - p_ped) or increasing WIDTH_CONST")
+    print(f"\nAll plots saved to: {save_dir}")
     
     return psi_pred, RR, ZZ
 
@@ -324,41 +280,22 @@ def create_diagnostic_plots(model, eps, kappa, delta, alpha, save_dir, grid_size
 def load_model_for_pedestal(checkpoint_path, num_alpha=2):
     """Load a trained pedestal pPINN model."""
     
-    # Model architecture (must match training)
     DEPTH = 4
     BREADTH = 40
     AF = "swish"
-    INPUT_DIM = 2 + num_alpha + 3  # R, Z, alpha0, alpha1, eps, kappa, delta
+    INPUT_DIM = 2 + num_alpha + 3
     
     net = dde.maps.FNN([INPUT_DIM] + DEPTH * [BREADTH] + [1], AF, "Glorot normal")
     
-    # Create minimal geometry and data for model compilation
-    # This is just for DeepXDE to work - we won't use it for anything
-    alpha_ranges = [
-        np.linspace(0.1, 1.0, 2),
-        np.linspace(1.5, 5.0, 2),
-    ]
+    # Minimal geometry for model compilation
+    xmin = np.array([0.5, -1.5, 0.05, 0.3, 0.12, 1.25, -0.5])
+    xmax = np.array([1.5, 1.5, 0.2, 1.0, 0.52, 2.75, 0.5])
+    geom = dde.geometry.Hypercube(xmin, xmax)
     
-    # Import the geometry class
-    sys.path.append('/scratch/yx3044/Projects/deepxde_copy/gs-2d-surrogate')
-    
-    # Minimal PDE for compilation
     def dummy_pde(x, u):
         return dde.grad.hessian(u, x, i=0, j=0)
     
-    # Create a simple hypercube geometry for dummy data
-    xmin = np.array([0.5, -1.5, 0.1, 1.5, 0.12, 1.25, -0.5])
-    xmax = np.array([1.5, 1.5, 1.0, 5.0, 0.52, 2.75, 0.5])
-    geom = dde.geometry.Hypercube(xmin, xmax)
-    
-    data = dde.data.PDE(
-        geom,
-        dummy_pde,
-        [],
-        num_domain=1,
-        num_boundary=0,
-        num_test=1
-    )
+    data = dde.data.PDE(geom, dummy_pde, [], num_domain=1, num_boundary=0, num_test=1)
     
     model = dde.Model(data=data, net=net)
     model.compile("adam", lr=1e-3)
@@ -368,7 +305,7 @@ def load_model_for_pedestal(checkpoint_path, num_alpha=2):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Diagnose pedestal pPINN model')
+    parser = argparse.ArgumentParser(description='Diagnose CORRECTED pedestal pPINN model')
     parser.add_argument('--model_path', type=str, required=True,
                         help='Path to model checkpoint')
     parser.add_argument('--eps', type=float, default=0.32,
@@ -377,24 +314,29 @@ def main():
                         help='Elongation')
     parser.add_argument('--delta', type=float, default=0.0,
                         help='Triangularity')
-    parser.add_argument('--p_ped', type=float, default=0.55,
-                        help='Pedestal pressure (alpha0)')
-    parser.add_argument('--p_core', type=float, default=3.25,
+    parser.add_argument('--p_edge', type=float, default=0.1,
+                        help='Edge pressure (alpha0)')
+    parser.add_argument('--p_core', type=float, default=0.6,
                         help='Core pressure (alpha1)')
-    parser.add_argument('--output_dir', type=str, default='./pedestal_diagnostics',
+    parser.add_argument('--output_dir', type=str, default='./pedestal_diagnostics_corrected',
                         help='Output directory for plots')
     parser.add_argument('--grid_size', type=int, default=200,
                         help='Grid resolution')
-    parser.add_argument('--zoom', type=float, default=1.5,
-                        help='Grid zoom factor')
     
     args = parser.parse_args()
     
-    print("Loading model...")
+    print("="*60)
+    print("CORRECTED Pedestal Model Diagnostics")
+    print("="*60)
+    print(f"\nModel: {args.model_path}")
+    print(f"Shape: eps={args.eps}, kappa={args.kappa}, delta={args.delta}")
+    print(f"Pressure: p_edge={args.p_edge}, p_core={args.p_core}")
+    
+    print("\nLoading model...")
     model = load_model_for_pedestal(args.model_path)
     
     print("\nCreating diagnostic plots...")
-    alpha = [args.p_ped, args.p_core]
+    alpha = [args.p_edge, args.p_core]
     
     create_diagnostic_plots(
         model=model,
@@ -403,11 +345,8 @@ def main():
         delta=args.delta,
         alpha=alpha,
         save_dir=args.output_dir,
-        grid_size=args.grid_size,
-        zoom=args.zoom
+        grid_size=args.grid_size
     )
-    
-    print(f"\nAll plots saved to: {args.output_dir}")
 
 
 if __name__ == "__main__":
