@@ -1,8 +1,10 @@
 """cd gs_2d_surrogate/
 source /scratch/yx3044/Projects/deepxde_copy/venv/bin/activate
 conda activate deepxde_copy
-python -u shape_optimization_with_general_profile.py  --profile pedestal --lambda_vol=125 --zoom=1.2 --plot True >> shape_125.txt
-python -u shape_optimization_with_general_profile.py  --profile pedestal --lambda_vol=125 --zoom=1.2 --plot True >> shape_pedestal_saved_metric_param6.txt
+python -u shape_optimization_with_general_profile.py  --profile solovev --lambda_vol=125 --zoom=1.2 --plot True >> shape_solovev_saved_metric_param6.txt
+python -u shape_optimization_with_general_profile.py  --profile solovev --lambda_vol=125 --zoom=1.2 --objective_type beta_p --plot True >> shape_solovev_beta_p_saved_metric_param6.txt
+python -u shape_optimization_with_general_profile.py  --profile pedestal --plot True >> shape_pedestal_saved_metric_param6.txt
+python -u shape_optimization_with_general_profile.py  --profile pedestal --objective_type beta_p --plot True >> shape_pedestal_beta_p_saved_metric_param6.txt
 
 
 Choose objective type:
@@ -1609,7 +1611,7 @@ if __name__ == "__main__":
         # Pedestal fixed params 5
         CHECKPOINT_PATH = "/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_models_new/run_12112025_0657_pedestal_fixed_5/pedestal_model-16001.ckpt"
         # Pedestal fixed params 6 !!performance possibly decreased due to MAX_BOUNDARY_POINTS, which later will be disabled
-        CHECKPOINT_PATH = "/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_models_new/run_12112025_0657_pedestal_fixed_6/pedestal_model-16001.ckpt"
+        CHECKPOINT_PATH = "/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_models_new/run_12112025_1356_pedestal_corrected_6/pedestal_model-16001.ckpt"
         # Pedestal fixed params 9 !!performance vastly decreased due to MAX_BOUNDARY_POINTS, which later will be disabled
         # CHECKPOINT_PATH = "/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_models_new/run_12112025_0710_pedestal_fixed_9/pedestal_model-16001.ckpt"
 
@@ -1636,7 +1638,16 @@ if __name__ == "__main__":
     
 
     if args.train_new:
-        spatial_domain = dde.geometry.HyperEllipticalToroid(**geometry_kwargs)
+        if args.profile == "solovev":
+            spatial_domain = dde.geometry.HyperEllipticalToroid_old(
+                eps_range=eps0,
+                kappa_range=kappa0,
+                delta_range=delta0,
+                Amax=Amax,
+                num_param=num_param,
+            )
+        elif args.profile == "pedestal":
+            spatial_domain = dde.geometry.HyperEllipticalToroid(**geometry_kwargs)
         x, u = gen_traindata(1001)
         bc135 = dde.PointSetBC(x, u)
         data = dde.data.PDE(spatial_domain, PROFILE_CONFIG["pde_fn"], [bc135],
@@ -1649,7 +1660,16 @@ if __name__ == "__main__":
         dde.saveplot(loss_history, train_state, issave=True, isplot=True, output_dir= f"/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_plots_new/run_{TIME}")
     else:
         # Create dummy data for inference only
-        spatial_domain = dde.geometry.HyperEllipticalToroid(**geometry_kwargs)
+        if args.profile == "solovev":
+            spatial_domain = dde.geometry.HyperEllipticalToroid_old(
+                eps_range=eps0,
+                kappa_range=kappa0,
+                delta_range=delta0,
+                Amax=Amax,
+                num_param=num_param,
+            )
+        elif args.profile == "pedestal":
+            spatial_domain = dde.geometry.HyperEllipticalToroid(**geometry_kwargs)
 
         data = dde.data.PDE(
             spatial_domain,
