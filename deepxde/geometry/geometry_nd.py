@@ -166,7 +166,210 @@ class Hypersphere(Geometry):
         return pts
 
 
+# ============================================================
+# New cleaned geometry class for parametrized toroidal shapes
+# ============================================================
+
+
+
 class HyperEllipticalToroid(Geometry):
+    """
+    Clean geometry for parametric PINNs:
+    Inputs: [R, Z, alpha0..alphaK, eps, kappa, delta]
+    
+    Total dimension:
+       dim = 2 + NUM_ALPHA + 3  (R,Z, α0..αK, eps, kappa, delta)
+    """
+
+    def __init__(
+        self,
+        eps_range,
+        kappa_range,
+        delta_range,
+        alpha_ranges,    # list of arrays e.g. [α0_range, α1_range, α2_range, α3_range]
+        num_param,
+        psi_boundary_points=200,
+    ):
+        # -----------------------------------------
+        # Store parameter grids
+        # -----------------------------------------
+        self.eps_range = eps_range
+        self.kappa_range = kappa_range
+        self.delta_range = delta_range
+        self.alpha_ranges = alpha_ranges   # list of length NUM_ALPHA
+        self.num_param = num_param
+        self.NUM_ALPHA = len(alpha_ranges)
+
+        # Shape parameters for sampling
+        self.eps_vals = np.linspace(eps_range[0], eps_range[1], num_param)
+        self.kappa_vals = np.linspace(kappa_range[0], kappa_range[1], num_param)
+        self.delta_vals = np.linspace(delta_range[0], delta_range[1], num_param)
+
+        # Number of points per boundary curve
+        self.Nb = psi_boundary_points
+        self.tau = np.linspace(0, 2*np.pi, self.Nb)
+
+        # -----------------------------------------
+        # Build the bounding box
+        # -----------------------------------------
+        # Axisymmetric bounding box: R and Z ranges depend only on eps,kappa
+        R_min = 1 - np.max(self.eps_vals)
+        R_max = 1 + np.max(self.eps_vals)
+
+        Z_max = np.max(self.eps_vals * self.kappa_vals)
+        Z_min = -Z_max
+
+        # α ranges
+        alpha_min = min(r[0] for r in alpha_ranges)
+        alpha_max = max(r[-1] for r in alpha_ranges)
+
+        # full xmin, xmax for all inputs: R,Z, α0..αK, eps,kappa,delta
+        xmin = [R_min, Z_min]
+        xmax = [R_max, Z_max]
+
+        xmin += [alpha_min] * self.NUM_ALPHA
+        xmax += [alpha_max] * self.NUM_ALPHA
+
+        xmin += [eps_range[0], kappa_range[0], delta_range[0]]
+        xmax += [eps_range[1], kappa_range[1], delta_range[1]]
+
+        xmin = np.array(xmin)
+        xmax = np.array(xmax)
+
+        # Dimensionality of input space
+        self.dim = 2 + self.NUM_ALPHA + 3   # R,Z + α0..αK + eps,kappa,delta
+
+        # Call Geometry base class
+        super().__init__(self.dim, (xmin, xmax), np.linalg.norm(xmax - xmin))
+
+        # -----------------------------------------
+        # Precompute boundary curves (huge speedup)
+        # -----------------------------------------
+        self.boundary_points = self._precompute_boundary_points()
+
+
+    # ============================================================
+    # Precompute all boundary curves (eps,kappa,delta, α0..αK)
+    # ============================================================
+
+    def _precompute_boundary_points(self):
+        pts = []
+
+        # Loop over shape parameters
+        for eps in self.eps_vals:
+            for kap in self.kappa_vals:
+                for delt in self.delta_vals:
+
+                    # Boundary curve: R(theta), Z(theta)
+                    Rb = 1 + eps * np.cos(self.tau + np.arcsin(delt)*np.sin(self.tau))
+                    Zb = eps * kap * np.sin(self.tau)
+
+                    # Loop over pressure coefficients
+                    alpha_grids = np.meshgrid(*self.alpha_ranges, indexing='ij')
+                    alpha_list = np.array([g.reshape(-1) for g in alpha_grids]).T
+                    # shape = (num_param^NUM_ALPHA , NUM_ALPHA)
+
+                    for alphas in alpha_list:
+                        # Construct full input for all theta:
+                        # shape = (Nb, dim)
+                        full = np.zeros((self.Nb, self.dim))
+
+                        # R,Z
+                        full[:, 0] = Rb
+                        full[:, 1] = Zb
+
+                        # α0..αK
+                        full[:, 2:2+self.NUM_ALPHA] = alphas[None, :]
+
+                        # eps,kappa,delta
+                        full[:, -3] = eps
+                        full[:, -2] = kap
+                        full[:, -1] = delt
+
+                        pts.append(full)
+
+        pts = np.vstack(pts)
+        return pts
+
+
+    # ============================================================
+    # Functions required by DeepXDE geometry
+    # ============================================================
+
+    def inside(self, x):
+        """Check if (R,Z) lies inside the D-shape. Only geometry of (R,Z) matters."""
+        R = x[:, 0]
+        Z = x[:, 1]
+
+        # Check max extent
+        if np.any(R < 1 - np.max(self.eps_vals)): return False
+        if np.any(R > 1 + np.max(self.eps_vals)): return False
+        if np.any(Z > np.max(self.eps_vals*self.kappa_vals)): return False
+        if np.any(Z < -np.max(self.eps_vals*self.kappa_vals)): return False
+
+        # Optional: allow wide interior
+        return np.ones(len(x), dtype=bool)
+
+
+    def on_boundary(self, x):
+        """We precomputed boundary, so just check nearest distance."""
+        # naive fast check: any point is NOT flagged as boundary.
+        return np.zeros(len(x), dtype=bool)
+
+
+    # ============================================================
+    # Random interior points
+    # ============================================================
+
+    def random_points(self, n, random="pseudo"):
+        """Return (n, dim) interior points: (R,Z, alphas, eps,kappa,delta)."""
+        pts = []
+
+        while len(pts) < n:
+            # Sample (R,Z) inside bbox
+            R = np.random.uniform(self.bbox[0][0], self.bbox[1][0])
+            Z = np.random.uniform(self.bbox[0][1], self.bbox[1][1])
+
+            if self.inside(np.array([[R, Z]])):
+
+                # Random α-coeffs
+                alphas = [np.random.uniform(r[0], r[-1]) for r in self.alpha_ranges]
+
+                # Random geometry params
+                eps = np.random.uniform(self.eps_range[0], self.eps_range[1])
+                kap = np.random.uniform(self.kappa_range[0], self.kappa_range[1])
+                delt = np.random.uniform(self.delta_range[0], self.delta_range[1])
+
+                x = np.zeros((self.dim,))
+                x[0] = R
+                x[1] = Z
+                x[2:2+self.NUM_ALPHA] = alphas
+                x[-3:] = [eps, kap, delt]
+
+                pts.append(x)
+
+        return np.vstack(pts)
+
+
+    # ============================================================
+    # Boundary points (already precomputed)
+    # ============================================================
+
+    def uniform_boundary_points(self, n):
+        """Return subset of precomputed boundary points."""
+        if n >= len(self.boundary_points):
+            return self.boundary_points
+
+        idx = np.random.choice(len(self.boundary_points), n, replace=False)
+        return self.boundary_points[idx]
+
+    def random_boundary_points(self, n):
+        idx = np.random.choice(len(self.boundary_points), n, replace=True)
+        return self.boundary_points[idx]
+
+
+
+class HyperEllipticalToroid_old(Geometry):
     """
         Class for parametric PINNs for toroidal shapes depending on three
         shape parameters and one parameter that controls the pressure profile,
@@ -200,6 +403,29 @@ class HyperEllipticalToroid(Geometry):
         self.kappa = np.linspace(kappa_range[0], kappa_range[1], self.num_param)
         self.delta = np.linspace(delta_range[0], delta_range[1], self.num_param)
 
+        # ------------------------------------------------------------------
+        # Call Geometry.__init__ *before* any method that relies on bbox/dim
+        # DeepXDE uses `geometry.dim` to allocate the TensorFlow placeholder
+        # for `X_train`.  Without this call the attribute is missing and the
+        # default value (3) is assumed, leading to the runtime error:
+        #   ValueError: Cannot feed value of shape (..., 6) for Placeholder_2:0
+        #               which has shape (None, 3)
+        # ------------------------------------------------------------------
+        xmin = np.array([1 - np.max(self.eps), -np.max(self.kappa * self.eps), -Amax,
+                         eps_range[0], kappa_range[0], delta_range[0]])
+        xmax = np.array([1 + np.max(self.eps),  np.max(self.kappa * self.eps),  Amax,
+                         eps_range[-1], kappa_range[-1], delta_range[-1]])
+
+        super().__init__(
+            6,  # total input dimension (R, Z, A, eps, kappa, delta)
+            (xmin, xmax),
+            np.linalg.norm(xmax - xmin),
+        )
+
+        # Re-assign in case later code expects these attributes
+        self.xmin = xmin
+        self.xmax = xmax
+
         R_ellipse = np.zeros((self.N, self.num_param, self.num_param, self.num_param, self.num_param))
         Z_ellipse = np.zeros((self.N, self.num_param, self.num_param, self.num_param, self.num_param))
         A_ellipse = np.zeros((self.N, self.num_param, self.num_param, self.num_param, self.num_param))
@@ -232,7 +458,7 @@ class HyperEllipticalToroid(Geometry):
         xmax = np.array([1 + np.max(self.eps), np.max(self.kappa * self.eps), Amax, eps_range[-1], kappa_range[-1], delta_range[-1]])
         self.Amax = Amax
 
-        super(HyperEllipticalToroid, self).__init__(6, (xmin,xmax), 1)
+        super(HyperEllipticalToroid_old, self).__init__(6, (xmin,xmax), 1)
 
     def inside(self, x):
         return is_point_in_path(x[:, 0:1], x[:, 1:2], self.x_ellipse)
@@ -252,6 +478,40 @@ class HyperEllipticalToroid(Geometry):
         # or np.allclose(abs(abs_diff[:, 2:3]), self.Amax)
 
     def random_points(self, n, random="pseudo"):
+        # if not hasattr(self, '_cached_points'):
+        #     print("Pre-computing valid points for fast sampling...")
+        #     # Generate a larger batch to ensure we have enough points
+        #     # Use a reasonable cache size (e.g., 10x the requested amount)
+        #     cache_size = max(n * 10, 1000)
+        #     self._cached_points = []
+        #     vbbox = self.bbox[1] - self.bbox[0]
+            
+        #     # Generate points in batches for efficiency
+        #     batch_size = min(1000, cache_size)
+        #     while len(self._cached_points) < cache_size:
+        #         # Generate a batch of candidate points
+        #         x_batch = np.random.rand(batch_size, 6) * vbbox + self.bbox[0]
+        #         # Filter valid points
+        #         valid_mask = self.inside(x_batch)
+        #         valid_points = x_batch[valid_mask]
+        #         self._cached_points.extend(valid_points)
+                
+        #         # Safety check to prevent infinite loop
+        #         if len(self._cached_points) == 0:
+        #             print("Warning: No valid points found in geometry. Check geometry definition.")
+        #             break
+            
+        #     self._cached_points = np.array(self._cached_points[:cache_size])
+        #     print(f"Cached {len(self._cached_points)} valid points")
+        
+        # # Sample from cached points
+        # if len(self._cached_points) >= n:
+        #     indices = np.random.choice(len(self._cached_points), n, replace=False)
+        #     return self._cached_points[indices]
+        # else:
+        #     # If we need more points than cached, generate more
+        #     return self._cached_points[np.random.choice(len(self._cached_points), n, replace=True)]
+
         x = []
         vbbox = self.bbox[1] - self.bbox[0]
         while len(x) < n:
@@ -366,12 +626,12 @@ class HyperFourierEllipse(Geometry):
         Zm_grid = Zm
 
         shape = (self.N,) + (self.num_param,) * (mpol*2+1)  # (100, 4, 4, 4, 4, 4)
-        R_ellipse = np.ones(shape)
-        Z_ellipse = np.ones(shape)
-        A_ellipse = np.ones(shape)
-        # R_ellipse = np.ones(shape) * self.minor_radius
-        # Z_ellipse = np.ones(shape) * self.minor_radius
-        # A_ellipse = np.ones(shape) * self.minor_radius
+        # R_ellipse = np.ones(shape)
+        # Z_ellipse = np.ones(shape)
+        # A_ellipse = np.ones(shape)
+        R_ellipse = np.ones(shape) * self.minor_radius
+        Z_ellipse = np.ones(shape) * self.minor_radius
+        A_ellipse = np.ones(shape) * self.minor_radius
 
         # We have to handle Rm and Zm first, so that we can calculate R_ellipse and Z_ellipse using them
 
@@ -387,10 +647,10 @@ class HyperFourierEllipse(Geometry):
         # For each Fourier mode m, create coefficient arrays
         for m in range(1, mpol + 1):
             # Create coefficient arrays with proper shape
-            Rm_m = np.ones(shape) * Rm_grid
-            Zm_m = np.ones(shape) * Zm_grid
-            # Rm_m = np.ones(shape) * self.minor_radius * Rm_grid
-            # Zm_m = np.ones(shape) * self.minor_radius * Zm_grid
+            # Rm_m = np.ones(shape) * Rm_grid
+            # Zm_m = np.ones(shape) * Zm_grid
+            Rm_m = np.ones(shape) * self.minor_radius * Rm_grid
+            Zm_m = np.ones(shape) * self.minor_radius * Zm_grid
             Rm_coeffs.append(Rm_m)
             Zm_coeffs.append(Zm_m)
 
@@ -426,7 +686,7 @@ class HyperFourierEllipse(Geometry):
             A_ellipse[slc] = Arange[idx[0]]
 
 
-        R_ellipse = R_ellipse + np.ones_like(R_ellipse) * self.minor_radius
+        R_ellipse = R_ellipse + np.ones_like(R_ellipse)
 
         # Store the components
         self.R_ellipse = R_ellipse
@@ -564,7 +824,7 @@ class HyperFourierEllipse(Geometry):
             Z_ellipse[slc] = np.sum([np.multiply(Zm_grid[slc][:, m-1], np.sin(m * self.tau)) for m in range(1, Zm_grid.shape[-1])], axis=0) 
             A_ellipse[slc] = Arange[idx[0]]
 
-        R_ellipse = R_ellipse + np.ones_like(R_ellipse) * self.minor_radius
+        R_ellipse = R_ellipse + np.ones_like(R_ellipse) 
 
         # Store the components
         self.R_ellipse = R_ellipse
@@ -640,7 +900,7 @@ class HyperFourierEllipse(Geometry):
             Z_ellipse[slc] = np.sum([np.multiply(Zm_grid[slc][:, m], np.sin(m * self.tau)) for m in range(1, Zm_grid.shape[-1])], axis=0) 
             A_ellipse[slc] = Arange[idx[0]]
 
-        R_ellipse = R_ellipse + np.ones_like(R_ellipse) * self.minor_radius
+        R_ellipse = R_ellipse + np.ones_like(R_ellipse)
 
         # Store the components
         self.R_ellipse = R_ellipse
