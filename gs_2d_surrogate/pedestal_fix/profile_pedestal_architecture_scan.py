@@ -1,40 +1,23 @@
 """
-Fixed pedestal profile for pPINN training.
+Pedestal profile training with configurable network architecture.
 
-Key changes from original:
-1. Gentler pedestal transition (larger WIDTH, removed extra STEEPNESS factor)
-2. Better alpha parameter ranges (bounded ratio)
-3. Pedestal location moved further inside plasma
-4. Optional pressure scaling for numerical stability
+This script is designed for architecture hyperparameter scanning:
+- Configurable network depth (number of hidden layers)
+- Configurable network width (neurons per layer)
+- Saves detailed training metrics for comparison
 
 Usage:
-    python profile_pedestal_fixed.py --num_params 5
+    # Test different depths
+    python profile_pedestal_architecture_scan.py --num_params 5 --depth 2 --width 40
+    python profile_pedestal_architecture_scan.py --num_params 5 --depth 3 --width 40
+    python profile_pedestal_architecture_scan.py --num_params 5 --depth 4 --width 40
     
-    # With scaled collocation points (num_domain * num_params)
-    python profile_pedestal_fixed.py --num_params 7 --scale_domain
-    
-    # Custom base domain points + scaling
-    python profile_pedestal_fixed.py --num_params 9 --num_domain 4096 --scale_domain
-        
-    # Limit boundary points (e.g., for memory constraints)
-    python profile_pedestal_fixed.py --num_params 9 --max_bc_points 500000
-        
-    # No limit on boundary points (default)
-    python profile_pedestal_fixed.py --num_params 9
+    # Test different widths
+    python profile_pedestal_architecture_scan.py --num_params 5 --depth 4 --width 20
+    python profile_pedestal_architecture_scan.py --num_params 5 --depth 4 --width 40
+    python profile_pedestal_architecture_scan.py --num_params 5 --depth 4 --width 60
 
-
-CORRECTED pedestal profile for pPINN training.
-
-Key fix: Pressure profile orientation
-- Core (ψ << 0): HIGH pressure (p_core)
-- Edge (ψ → 0): LOW pressure (p_edge)
-- Pedestal is a DECREASE from core to edge
-
-This matches the physical H-mode profile where:
-- Hot, high-pressure plasma in the core
-- Steep gradient at the pedestal
-- Low pressure at the edge/SOL
-
+Based on: profile_pedestal_fixed.py
 """
 
 from __future__ import absolute_import, division, print_function
@@ -43,6 +26,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import sys
 import os
+import json
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = "2"
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
@@ -51,7 +35,7 @@ import time
 import argparse
 
 # Parse arguments first
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(description='Pedestal pPINN with configurable architecture')
 parser.add_argument('--num_params', type=int, default=5,
                     help='Number of parameters per dimension')
 parser.add_argument('--epochs_adam', type=int, default=1000,
@@ -65,29 +49,39 @@ parser.add_argument('--num_domain', type=int, default=2048,
 parser.add_argument('--scale_domain', action='store_true', default=False,
                     help='Scale num_domain with num_params (num_domain * num_params)')
 parser.add_argument('--max_bc_points', type=int, default=None,
-                    help='Base maximum boundary points (default: None = no limit)')
-parser.add_argument('--lbfgs_maxiter', type=int, default=100000,
-                    help='L-BFGS maximum iterations')
-parser.add_argument('--lbfgs_maxfun', type=int, default=120000,
-                    help='L-BFGS maximum function evaluations')
+                    help='Maximum boundary points (default: None = no limit)')
+
+# NEW: Architecture arguments
 parser.add_argument('--depth', type=int, default=4,
-                    help='Network depth')
+                    help='Number of hidden layers (default: 4)')
 parser.add_argument('--width', type=int, default=40,
-                    help='Network width')
-parser.add_argument('--activation', type=str, default="swish",
-                    help='Network activation function',
-                    choices=['swish', 'tanh', 'sigmoid', 'relu'])
+                    help='Neurons per hidden layer (default: 40)')
+parser.add_argument('--activation', type=str, default='swish',
+                    choices=['swish', 'tanh', 'sigmoid', 'relu'],
+                    help='Activation function (default: swish)')
 parser.add_argument('--lr', type=float, default=2e-2,
-                    help='Learning rate')
+                    help='Learning rate for Adam (default: 0.02)')
+parser.add_argument('--bc_weight', type=float, default=100,
+                    help='Boundary condition loss weight (default: 100)')
+
+# Experiment naming
+parser.add_argument('--experiment_name', type=str, default=None,
+                    help='Custom experiment name for organizing runs')
+
 args = parser.parse_args()
 
-print("Number of parameters:", args.num_params)
-print("Network depth:", args.depth)
-print("Network width:", args.width)
-print("Network activation function:", args.activation)
-print("Learning rate:", args.lr)
-print("L-BFGS maximum iterations:", args.lbfgs_maxiter)
-print("L-BFGS maximum function evaluations:", args.lbfgs_maxfun)
+print("="*60)
+print("ARCHITECTURE SCAN CONFIGURATION")
+print("="*60)
+print(f"  num_params: {args.num_params}")
+print(f"  depth (hidden layers): {args.depth}")
+print(f"  width (neurons/layer): {args.width}")
+print(f"  activation: {args.activation}")
+print(f"  learning rate: {args.lr}")
+print(f"  BC weight: {args.bc_weight}")
+print(f"  epochs_adam: {args.epochs_adam}")
+print(f"  epochs_lbfgs: {args.epochs_lbfgs}")
+print("="*60)
 
 # DeepXDE setup
 deepxde_path = '/scratch/yx3044/Projects/deepxde_copy'
@@ -137,30 +131,13 @@ delta_vals = np.linspace(delta0[0], delta0[1], num_param)
 
 
 # ============================================================
-# CORRECTED Pedestal Profile Parameters
+# Pedestal Profile Parameters
 # ============================================================
-
-# ψ convention in this code:
-#   ψ_axis < 0  (most negative at magnetic axis, i.e., core)
-#   ψ_boundary = 0  (at plasma edge)
-#
-# For H-mode pedestal:
-#   p_core = HIGH (in the core where ψ << 0)
-#   p_edge = LOW  (at the edge where ψ → 0)
-#   Pedestal location: ψ_ped ~ -0.08 (between core and edge)
-
-PSI_PED = -0.08         # Pedestal location
-WIDTH = 0.06            # Pedestal width in psi units
+PSI_PED = -0.08
+WIDTH = 0.06
 
 NUM_ALPHA = 2
 INPUT_DIM = 2 + NUM_ALPHA + 3  # R, Z, α0, α1, eps, kappa, delta
-
-# Alpha ranges:
-# α0 (p_edge): Edge pressure (LOW) [0.05, 0.2]
-# α1 (p_core): Core pressure (HIGH) [0.3, 1.0]
-#
-# Physical constraint: p_core > p_edge always
-# Gradient: dp/dψ ~ (p_edge - p_core) / WIDTH < 0 (pressure decreases outward)
 
 alpha_ranges = [
     np.linspace(0.05, 0.2, num_param),   # α0: p_edge (low values)
@@ -169,55 +146,19 @@ alpha_ranges = [
 
 
 def p_of_psi_pedestal(psi, alpha):
-    """
-    CORRECTED H-mode pedestal pressure profile.
+    """CORRECTED H-mode pedestal pressure profile."""
+    p_edge = alpha[:, 0:1]
+    p_core = alpha[:, 1:2]
     
-    Physical behavior:
-    - p = p_core (HIGH) in core where ψ << 0
-    - p = p_edge (LOW) at edge where ψ → 0
-    - Smooth tanh transition at pedestal location ψ_ped
-    
-    Parameters:
-    -----------
-    psi : tensor
-        Poloidal flux values, shape (N, 1)
-        Convention: ψ < 0 in core, ψ = 0 at boundary
-    alpha : tensor
-        Profile parameters, shape (N, 2)
-        alpha[:, 0] = p_edge (edge pressure, LOW)
-        alpha[:, 1] = p_core (core pressure, HIGH)
-    
-    Returns:
-    --------
-    p : tensor
-        Pressure values, shape (N, 1)
-    """
-    p_edge = alpha[:, 0:1]  # LOW pressure at edge
-    p_core = alpha[:, 1:2]  # HIGH pressure in core
-    
-    # Smooth step function:
-    # H(ψ) = 0.5 * (1 + tanh((ψ - ψ_ped) / Δ))
-    # 
-    # When ψ << ψ_ped (deep core): H → 0
-    # When ψ >> ψ_ped (near edge): H → 1
     arg = (psi - PSI_PED) / WIDTH
     H = 0.5 * (1.0 + tf.tanh(arg))
-    
-    # CORRECTED pressure formula:
-    # p = p_core when H=0 (core)
-    # p = p_edge when H=1 (edge)
-    # p = p_core * (1 - H) + p_edge * H
     p = p_core * (1.0 - H) + p_edge * H
     
     return p
 
 
 def dp_dpsi_pedestal(psi, alpha):
-    """
-    Compute dp/dψ using automatic differentiation.
-    
-    Note: dp/dψ should be NEGATIVE (pressure decreases as ψ increases toward edge)
-    """
+    """Compute dp/dψ using automatic differentiation."""
     with tf.GradientTape() as tape:
         tape.watch(psi)
         p_val = p_of_psi_pedestal(psi, alpha)
@@ -225,40 +166,24 @@ def dp_dpsi_pedestal(psi, alpha):
 
 
 def pde_pedestal(x, u):
-    """
-    Grad-Shafranov equation with pedestal pressure profile.
-    
-    Δ*ψ = -μ₀R²(dp/dψ) - F(dF/dψ)
-    
-    For simplified case (F = const):
-    ψ_RR - ψ_R/R + ψ_ZZ = -R² * dp/dψ
-    
-    Since dp/dψ < 0 (pressure decreases outward), the RHS is positive.
-    """
+    """Grad-Shafranov equation with pedestal pressure profile."""
     psi = u[:, 0:1]
     R = x[:, 0:1]
     
-    # Spatial derivatives
     psi_R = dde.grad.jacobian(psi, x, i=0, j=0)
     psi_RR = dde.grad.hessian(psi, x, i=0, j=0)
     psi_ZZ = dde.grad.hessian(psi, x, i=1, j=1)
     
-    # Extract pressure parameters
     alpha = x[:, 2:2+NUM_ALPHA]
-    
-    # Pressure gradient (should be negative)
     dpdpsi = dp_dpsi_pedestal(psi, alpha)
     
-    # GS equation residual
     GS = psi_RR - psi_R/R + psi_ZZ + R**2 * dpdpsi
     
     return GS
 
 
 def gen_boundary_data(num_boundary_pts):
-    """
-    Generate boundary training data (ψ = 0 on plasma boundary).
-    """
+    """Generate boundary training data (ψ = 0 on plasma boundary)."""
     N = num_boundary_pts
     tau = np.linspace(0, 2*np.pi, N)
     
@@ -271,9 +196,8 @@ def gen_boundary_data(num_boundary_pts):
                 Rb = 1 + eps_val * np.cos(tau + np.arcsin(delta_val) * np.sin(tau))
                 Zb = eps_val * kappa_val * np.sin(tau)
                 
-                for a0 in alpha_ranges[0]:  # p_edge
-                    for a1 in alpha_ranges[1]:  # p_core
-                        # Only include if p_core > p_edge (physical constraint)
+                for a0 in alpha_ranges[0]:
+                    for a1 in alpha_ranges[1]:
                         if a1 > a0:
                             R_list.append(Rb)
                             Z_list.append(Zb)
@@ -303,96 +227,70 @@ def gen_boundary_data(num_boundary_pts):
     return x_boundary, u_boundary
 
 
-# ============================================================
-# Visualization of CORRECTED profile
-# ============================================================
-
-def plot_pressure_profile():
-    """
-    Plot the corrected pressure profile to verify orientation.
-    """
-    import matplotlib.pyplot as plt
+class LossHistoryCallback(dde.callbacks.Callback):
+    """Callback to record detailed loss history."""
     
-    psi_vals = np.linspace(-0.5, 0.1, 500)
-    
-    # Test parameters
-    p_edge = 0.1   # LOW at edge
-    p_core = 0.8   # HIGH in core
-    
-    # Compute H
-    H = 0.5 * (1.0 + np.tanh((psi_vals - PSI_PED) / WIDTH))
-    
-    # Compute pressure (CORRECTED)
-    p = p_core * (1.0 - H) + p_edge * H
-    
-    # Compute gradient
-    dpdpsi = (p_edge - p_core) / WIDTH * 0.5 * (1 - np.tanh((psi_vals - PSI_PED) / WIDTH)**2)
-    
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    
-    # Pressure profile
-    ax1 = axes[0]
-    ax1.plot(psi_vals, p, 'b-', lw=2)
-    ax1.axvline(x=0, color='r', ls='--', label='ψ=0 (boundary)')
-    ax1.axvline(x=PSI_PED, color='orange', ls='--', label=f'ψ_ped={PSI_PED}')
-    ax1.axhline(y=p_core, color='green', ls=':', alpha=0.5, label=f'p_core={p_core}')
-    ax1.axhline(y=p_edge, color='purple', ls=':', alpha=0.5, label=f'p_edge={p_edge}')
-    ax1.set_xlabel('ψ', fontsize=12)
-    ax1.set_ylabel('p(ψ)', fontsize=12)
-    ax1.set_title(f'CORRECTED Pressure Profile\np_edge={p_edge}, p_core={p_core}', fontsize=14)
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
-    
-    # Add annotations
-    ax1.annotate('Core\n(HIGH p)', xy=(-0.4, p_core-0.05), fontsize=11, ha='center')
-    ax1.annotate('Edge\n(LOW p)', xy=(0.05, p_edge+0.05), fontsize=11, ha='center')
-    ax1.annotate('Pedestal\n(steep gradient)', xy=(PSI_PED, 0.5*(p_core+p_edge)), 
-                fontsize=10, ha='center',
-                arrowprops=dict(arrowstyle='->', color='black'),
-                xytext=(PSI_PED-0.15, 0.5*(p_core+p_edge)))
-    
-    # Gradient profile
-    ax2 = axes[1]
-    ax2.plot(psi_vals, dpdpsi, 'r-', lw=2)
-    ax2.axvline(x=0, color='r', ls='--', label='ψ=0 (boundary)')
-    ax2.axvline(x=PSI_PED, color='orange', ls='--', label=f'ψ_ped={PSI_PED}')
-    ax2.axhline(y=0, color='gray', ls='-', alpha=0.5)
-    ax2.set_xlabel('ψ', fontsize=12)
-    ax2.set_ylabel('dp/dψ', fontsize=12)
-    ax2.set_title('Pressure Gradient', fontsize=14)
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
-    
-    # Add annotation for gradient sign
-    ax2.annotate('dp/dψ < 0\n(pressure decreases\ntoward edge)', 
-                xy=(PSI_PED, dpdpsi.min()/2), fontsize=10, ha='center')
-    
-    plt.tight_layout()
-    plt.savefig('pressure_profile_corrected.png', dpi=150)
-    plt.close()
-    print("Saved: pressure_profile_corrected.png")
-    
-    # Print verification
-    print(f"\nVerification:")
-    print(f"  At ψ = -0.4 (core):  p = {p_core * (1 - 0.5*(1+np.tanh((-0.4-PSI_PED)/WIDTH))) + p_edge * 0.5*(1+np.tanh((-0.4-PSI_PED)/WIDTH)):.3f}")
-    print(f"  At ψ = 0.0 (edge):   p = {p_core * (1 - 0.5*(1+np.tanh((0-PSI_PED)/WIDTH))) + p_edge * 0.5*(1+np.tanh((0-PSI_PED)/WIDTH)):.3f}")
-    print(f"  Expected: core ~ {p_core}, edge ~ {p_edge}")
+    def __init__(self, record_every=10):
+        super().__init__()
+        self.record_every = record_every
+        self.history = []
+        self.start_time = None
+        
+    def on_train_begin(self):
+        self.start_time = time.time()
+        
+    def on_epoch_end(self):
+        if self.model.train_state.step % self.record_every == 0:
+            elapsed = time.time() - self.start_time
+            train_loss = self.model.train_state.loss_train
+            test_loss = self.model.train_state.loss_test
+            
+            # Total loss (sum of components)
+            total_train = sum(train_loss) if isinstance(train_loss, (list, tuple)) else train_loss
+            total_test = sum(test_loss) if isinstance(test_loss, (list, tuple)) else test_loss
+            
+            self.history.append({
+                'step': int(self.model.train_state.step),
+                'elapsed_time': elapsed,
+                'train_loss_pde': float(train_loss[0]) if isinstance(train_loss, (list, tuple)) else float(train_loss),
+                'train_loss_bc': float(train_loss[1]) if isinstance(train_loss, (list, tuple)) and len(train_loss) > 1 else 0,
+                'train_loss_total': float(total_train),
+                'test_loss_total': float(total_test),
+            })
 
 
 if __name__ == "__main__":
     
-    # First, generate and show the corrected pressure profile
-    plot_pressure_profile()
+    TIME = time.strftime("%m%d%Y_%H%M%S")
     
-    TIME = time.strftime("%m%d%Y_%H%M")
-    
+    # Create descriptive output directory name
     if args.output_dir:
         PATH = args.output_dir
     else:
-        PATH = f"/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_models_new/run_{TIME}_pedestal_corrected_{args.num_params}"
+        exp_name = args.experiment_name or "arch_scan"
+        PATH = f"/scratch/yx3044/Projects/deepxde_copy/gs_2d_surrogate/saved_models_new/{exp_name}_d{args.depth}_w{args.width}_p{args.num_params}_{TIME}"
     
     os.makedirs(PATH, exist_ok=True)
     print(f"Output directory: {PATH}")
+    
+    # Save configuration
+    config = {
+        'num_params': args.num_params,
+        'depth': args.depth,
+        'width': args.width,
+        'activation': args.activation,
+        'lr': args.lr,
+        'bc_weight': args.bc_weight,
+        'epochs_adam': args.epochs_adam,
+        'epochs_lbfgs': args.epochs_lbfgs,
+        'num_domain': args.num_domain,
+        'scale_domain': args.scale_domain,
+        'max_bc_points': args.max_bc_points,
+        'timestamp': TIME,
+    }
+    
+    with open(os.path.join(PATH, 'config.json'), 'w') as f:
+        json.dump(config, f, indent=2)
     
     # --------------------------------------------------------
     # Generate training data
@@ -400,12 +298,12 @@ if __name__ == "__main__":
     print("\nGenerating boundary data...")
     x_bc, u_bc = gen_boundary_data(num_boundary_pts=201)
     
-    # Optionally subsample boundary points
     if args.max_bc_points is not None and len(x_bc) > args.max_bc_points:
         idx = np.random.choice(len(x_bc), args.max_bc_points, replace=False)
         x_bc = x_bc[idx]
         u_bc = u_bc[idx]
-        print(f"Subsampled to {args.max_bc_points} boundary points")    
+        print(f"Subsampled to {args.max_bc_points} boundary points")
+    
     bc = dde.PointSetBC(x_bc, u_bc)
     
     # --------------------------------------------------------
@@ -433,19 +331,23 @@ if __name__ == "__main__":
         [bc],
         num_domain=actual_num_domain,
         num_boundary=0,
-        num_test=1000, # 100
+        num_test=100,
         train_distribution="LHS"
     )
     
     # --------------------------------------------------------
-    # Network architecture
+    # Network architecture - CONFIGURABLE
     # --------------------------------------------------------
     DEPTH = args.depth
-    BREADTH = args.width
+    WIDTH = args.width
     AF = args.activation
     LR = args.lr
     
-    net = dde.maps.FNN([INPUT_DIM] + DEPTH * [BREADTH] + [1], AF, "Glorot normal")
+    layer_sizes = [INPUT_DIM] + DEPTH * [WIDTH] + [1]
+    print(f"\nNetwork architecture: {layer_sizes}")
+    print(f"Total parameters: ~{sum(layer_sizes[i]*layer_sizes[i+1] + layer_sizes[i+1] for i in range(len(layer_sizes)-1))}")
+    
+    net = dde.maps.FNN(layer_sizes, AF, "Glorot normal")
     model = dde.Model(data, net)
     
     # --------------------------------------------------------
@@ -455,13 +357,19 @@ if __name__ == "__main__":
     print("PHASE 1: Adam optimizer")
     print("="*60)
     
+    loss_callback = LossHistoryCallback(record_every=10)
+    
     decay_rate = ("inverse time", 100, 0.1)
-    model.compile("adam", lr=LR, decay=decay_rate, loss_weights=[1, 100])
+    model.compile("adam", lr=LR, decay=decay_rate, loss_weights=[1, args.bc_weight])
     
     loss_history, train_state = model.train(
         epochs=args.epochs_adam,
-        display_every=100
+        display_every=100,
+        callbacks=[loss_callback]
     )
+    
+    # Mark end of Adam phase
+    adam_end_step = model.train_state.step
     
     dde.saveplot(loss_history, train_state, issave=True, isplot=True,
                 output_dir=PATH, output_fname="loss_adam")
@@ -475,23 +383,38 @@ if __name__ == "__main__":
     
     from deepxde.optimizers import set_LBFGS_options
     set_LBFGS_options(
-        maxiter=args.lbfgs_maxiter, # default 100000
+        maxiter=100000,
         maxcor=50,
         ftol=0,
         gtol=1e-10,
-        maxfun=args.lbfgs_maxfun, # default 120000
+        maxfun=120000,
         maxls=50,
     )
     
-    model.compile("L-BFGS-B", loss_weights=[1, 100])
+    model.compile("L-BFGS-B", loss_weights=[1, args.bc_weight])
     
     loss_history, train_state = model.train(
         epochs=args.epochs_lbfgs,
-        display_every=100
+        display_every=100,
+        callbacks=[loss_callback]
     )
     
     dde.saveplot(loss_history, train_state, issave=True, isplot=True,
                 output_dir=PATH, output_fname="loss_lbfgs")
+    
+    # --------------------------------------------------------
+    # Save detailed loss history
+    # --------------------------------------------------------
+    loss_data = {
+        'config': config,
+        'adam_end_step': adam_end_step,
+        'history': loss_callback.history
+    }
+    
+    with open(os.path.join(PATH, 'loss_history.json'), 'w') as f:
+        json.dump(loss_data, f, indent=2)
+    
+    print(f"\nLoss history saved to: {PATH}/loss_history.json")
     
     # --------------------------------------------------------
     # Save model
@@ -511,8 +434,8 @@ if __name__ == "__main__":
     eps_test = 0.32
     kap_test = 2.0
     delt_test = 0.0
-    a0_test = 0.1   # p_edge (LOW)
-    a1_test = 0.6   # p_core (HIGH)
+    a0_test = 0.1
+    a1_test = 0.6
     
     n_grid = 100
     r = np.linspace(1 - 1.5*eps_test, 1 + 1.5*eps_test, n_grid)
@@ -522,8 +445,8 @@ if __name__ == "__main__":
     X_test = np.zeros((n_grid**2, INPUT_DIM))
     X_test[:, 0] = RR.ravel()
     X_test[:, 1] = ZZ.ravel()
-    X_test[:, 2] = a0_test  # p_edge
-    X_test[:, 3] = a1_test  # p_core
+    X_test[:, 2] = a0_test
+    X_test[:, 3] = a1_test
     X_test[:, 4] = eps_test
     X_test[:, 5] = kap_test
     X_test[:, 6] = delt_test
@@ -543,7 +466,7 @@ if __name__ == "__main__":
     
     ax1.set_xlabel('R')
     ax1.set_ylabel('Z')
-    ax1.set_title(f'ψ field (eps={eps_test}, kappa={kap_test}, delta={delt_test}, p_edge={a0_test}, p_core={a1_test})')
+    ax1.set_title(f'ψ field (depth={args.depth}, width={args.width})')
     ax1.set_aspect('equal')
     ax1.legend()
     
@@ -566,6 +489,19 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.savefig(os.path.join(PATH, 'validation_plot.png'), dpi=150)
     plt.close()
+    
+    # Save final statistics
+    final_stats = {
+        'psi_min': float(psi_pred.min()),
+        'psi_max': float(psi_pred.max()),
+        'final_train_loss': float(sum(model.train_state.loss_train)),
+        'final_test_loss': float(sum(model.train_state.loss_test)),
+        'total_steps': int(model.train_state.step),
+        'has_zero_crossing': bool(psi_pred.min() < 0 < psi_pred.max()),
+    }
+    
+    with open(os.path.join(PATH, 'final_stats.json'), 'w') as f:
+        json.dump(final_stats, f, indent=2)
     
     print(f"Validation plot saved to: {PATH}/validation_plot.png")
     print(f"\nψ statistics: min={psi_pred.min():.4f}, max={psi_pred.max():.4f}")

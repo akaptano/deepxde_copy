@@ -11,12 +11,20 @@ Choose objective type:
 
 
 Debugging:
-If you get an error saying:  
-
+1. Error:
 vertices = c.collections[0].get_paths()[0].vertices
 IndexError: list index out of range
 
+Solution:
 try using a larger zoom, e.g. zoom=2.2
+
+2. Error: AttributeError: `dense` is not available with Keras 3.
+
+Solution:
+export TF_USE_LEGACY_KERAS=1 
+or
+pip install tensorflow[and-cuda]==2.15.0
+
 """
 
 import time
@@ -1074,8 +1082,13 @@ if __name__ == "__main__":
 
     if args.train_new:
         spatial_domain = dde.geometry.HyperEllipticalToroid(
-            eps0, kappa0, delta0, Amax=Amax
-        ) 
+            eps_range=eps0,
+            kappa_range=kappa0,
+            delta_range=delta0,
+            alpha_ranges=alpha_ranges,
+            num_param=num_param,
+            psi_boundary_points=200
+        )
         x, u = gen_traindata(1001)
         bc135 = dde.PointSetBC(x, u)
         data = dde.data.PDE(spatial_domain, pde_solovev, [bc135],
@@ -1089,11 +1102,25 @@ if __name__ == "__main__":
     else:
         # Create dummy data for inference only
         spatial_domain = dde.geometry.HyperEllipticalToroid(
-            eps0, kappa0, delta0, Amax=Amax
-        ) 
+            eps_range=eps0,
+            kappa_range=kappa0,
+            delta_range=delta0,
+            alpha_ranges=alpha_ranges,
+            num_param=num_param,
+            psi_boundary_points=200
+        )
+        if args.profile == "solovev":
+            pde = pde_solovev
+        elif args.profile == "polynomial":
+            pde = pde_general_polynomial
+        elif args.profile == "chebyshev":
+            pde = pde_general_cheb
+        else:
+            raise ValueError(f"Invalid profile: {args.profile}")
+            
         data = dde.data.PDE(
             spatial_domain,
-            pde_solovev,
+            pde,
             [],  # No BCs needed for inference
             num_domain=1,  # Minimal points needed
             num_boundary=0,

@@ -282,10 +282,13 @@ PEDESTAL_PSI = -0.08
 PEDESTAL_WIDTH = 0.08
 
 
-def _build_pedestal_alpha_ranges(n: int) -> Sequence[np.ndarray]:
+def _build_pedestal_alpha_ranges(n: int,
+                                  edge_min: float = 0.05, edge_max: float = 0.2,
+                                  core_min: float = 0.3, core_max: float = 1.0,
+                                  ) -> Sequence[np.ndarray]:
     return [
-        np.linspace(0.05, 0.2, n),  # α0: p_edge
-        np.linspace(0.3, 1.0, n),   # α1: p_core
+        np.linspace(edge_min, edge_max, n),  # α0: p_edge
+        np.linspace(core_min, core_max, n),   # α1: p_core
     ]
 
 
@@ -333,7 +336,7 @@ def _build_pedestal_pde(num_alpha: int):
 PROFILE_CONFIG = None
 
 
-def build_profile_config(profile_name: str) -> dict:
+def build_profile_config(profile_name: str, **kwargs) -> dict:
     profile = profile_name.lower()
     if profile == "solovev":
         return {
@@ -383,7 +386,13 @@ def build_profile_config(profile_name: str) -> dict:
             "alpha_labels": [f"alpha_{i}" for i in range(len(alpha_ranges))],
         }
     if profile == "pedestal":
-        alpha_ranges = _build_pedestal_alpha_ranges(num_param)
+        alpha_ranges = _build_pedestal_alpha_ranges(
+            num_param,
+            edge_min=kwargs.get("alpha_edge_min", 0.05),
+            edge_max=kwargs.get("alpha_edge_max", 0.2),
+            core_min=kwargs.get("alpha_core_min", 0.3),
+            core_max=kwargs.get("alpha_core_max", 1.0),
+        )
         alpha_bounds = [(arr.min(), arr.max()) for arr in alpha_ranges]
         return {
             "name": profile,
@@ -1563,9 +1572,21 @@ if __name__ == "__main__":
     parser.add_argument("--objective_type", type=str, default="beta_p_and_qstar")
     parser.add_argument("--n_restarts", type=int, default=10)
     parser.add_argument("--print_metrics", type=bool, default=False)
+    parser.add_argument("--alpha_edge_min", type=float, default=0.05,
+                        help="Pedestal profile: minimum p_edge value")
+    parser.add_argument("--alpha_edge_max", type=float, default=0.2,
+                        help="Pedestal profile: maximum p_edge value")
+    parser.add_argument("--alpha_core_min", type=float, default=0.3,
+                        help="Pedestal profile: minimum p_core value")
+    parser.add_argument("--alpha_core_max", type=float, default=1.0,
+                        help="Pedestal profile: maximum p_core value")
     args = parser.parse_args()
 
-    PROFILE_CONFIG = build_profile_config(args.profile)
+    PROFILE_CONFIG = build_profile_config(args.profile,
+                                          alpha_edge_min=args.alpha_edge_min,
+                                          alpha_edge_max=args.alpha_edge_max,
+                                          alpha_core_min=args.alpha_core_min,
+                                          alpha_core_max=args.alpha_core_max)
 
     if args.optimize_alpha is None:
         args.optimize_alpha = PROFILE_CONFIG["num_alpha"] > 0
